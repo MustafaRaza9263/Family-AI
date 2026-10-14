@@ -1,0 +1,13 @@
+---
+description: company-ai project rules
+alwaysApply: true
+---
+Read SOURCE_OF_TRUTH.md before any task. It is the source of truth. If a request conflicts with it, say so instead of silently deviating.
+
+- Stack: Node.js, Express, TypeScript (strict), Zod, pino, Vitest, npm. Do not add dependencies without saying why.
+- Layers: routes -> controllers -> services -> guardrails. One file, one job, aim for 150 lines or fewer.
+- Keep code clean and understandable: explicit names, no clever abstractions, comments explain why. The owner must understand every line.
+- Config only through validated env (src/config/env.ts). Never hardcode secrets or URLs.
+- Never use console.log; use the pino logger. Never log passwords or tokens.
+- Do only what the task asks. No extra features, no refactors outside the task.
+- When finished: run typecheck, lint and tests, then give a short plain-English walkthrough of each new file (what it does, why each import exists) and list anything you were unsure about.
