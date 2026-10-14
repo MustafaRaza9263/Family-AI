@@ -6,7 +6,9 @@ import { AppError, ErrorCodes } from './errors';
 export function normalizePhone(raw: string, region = env.DEFAULT_PHONE_REGION): string {
   const parsed = parsePhoneNumberFromString(raw, region as CountryCode);
   if (!parsed || !parsed.isValid()) {
-    throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid phone number');
+    throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid phone number', {
+      details: [{ path: 'phone', message: 'Invalid phone number' }],
+    });
   }
   return parsed.format('E.164');
 }

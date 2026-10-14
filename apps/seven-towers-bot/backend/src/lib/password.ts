@@ -16,18 +16,16 @@ const DUMMY_HASH =
 
 export function assertPasswordRules(password: string, email: string): void {
   if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
-    throw new AppError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`,
-    );
+    const message = `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`;
+    throw new AppError(400, ErrorCodes.VALIDATION_ERROR, message, {
+      details: [{ path: 'password', message }],
+    });
   }
   if (password.toLowerCase() === email.toLowerCase()) {
-    throw new AppError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      'Password must not equal the email address',
-    );
+    const message = 'Password must not equal the email address';
+    throw new AppError(400, ErrorCodes.VALIDATION_ERROR, message, {
+      details: [{ path: 'password', message }],
+    });
   }
 }
 

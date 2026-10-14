@@ -49,7 +49,8 @@ company-ai/
 │       │   ├── prompts/    system prompt files
 │       │   ├── tests/
 │       │   └── .env.example
-│       └── frontend/       Next.js, built as static files and served by the backend
+│       └── frontend/       Next.js App Router (static export → out/)
+│           └── src/        app · components/{ui,layout,auth,chat,rich,admin} · hooks · lib
 ├── infra/vllm/             docker-compose.yml · .env.example
 ├── evals/                  datasets/ · runners · results/
 ├── packages/               shared code (create only when 2+ apps need it)
@@ -97,7 +98,7 @@ A new *project* for an existing app (for example another property) is just a new
 - **Rich results (general tools):** images are stored on the server (`assets/images/`, converted to WebP with thumbnails) and described in `catalog.json` (id, type, title, tags, file). Tables (installment plans, room breakdowns, payment breakdowns) are data files in `assets/tables/`, listed in the same catalog. A compact catalog index (id, title, tags) is part of the prompt. The model calls two generic tools, `show_images(ids, caption?)` and `show_table(id)`. The backend validates every ID against the catalog and emits `attachment` events. The UI renders a gallery with full-screen viewer and a responsive table. The model never writes image URLs or numbers. Image files are served only to logged-in users.
 - **Guards:** message ≤1,500 chars · answer ≤1,024 tokens · last ~10 messages within the context budget · 20 requests/min and 200/day per user · 5 signups/hour per IP · hidden honeypot field on the signup form · max 6 answers in flight (else 503 "busy") · `trust proxy` for real visitor IPs · input injection flags · output fallback message.
 - **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status), `sessions`, `conversations`, `messages`, `audit_logs`.
-- **UI:** premium iOS-style, animated, responsive (phone, tablet, desktop), light/dark, safe-area aware, respects reduced motion. Tailwind + Motion, self-hosted fonts.
+- **UI:** premium iOS-style (Open WebUI-inspired layout), animated, responsive (phone, tablet, desktop), light/dark/system theme, safe-area aware, respects reduced motion. Tailwind v4 + Motion. System font stack with self-hosted Inter Variable fallback. No external assets; Express CSP enforces `default-src 'self'` (scripts/styles allow `'unsafe-inline'` for Next static hydration; `upgrade-insecure-requests` disabled for plain-HTTP LAN).
 
 ## 8. Deployment and serving
 

@@ -29,6 +29,8 @@ const envSchema = z.object({
         .map((origin) => origin.trim())
         .filter((origin) => origin.length > 0),
     ),
+  /** Relative to process.cwd() (backend/). Next export lands in frontend/out. */
+  FRONTEND_DIST_DIR: z.string().min(1).default('../frontend/out'),
 });
 
 const parsed = envSchema.safeParse(process.env);
