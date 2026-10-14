@@ -1,8 +1,12 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
+import { createFakeKnowledge, createPlainLlm } from './helpers/fakes';
 
-const app = createApp();
+const app = createApp({
+  llm: createPlainLlm(),
+  knowledge: createFakeKnowledge(),
+});
 
 describe('GET /api/health', () => {
   it('returns 200 with status ok', async () => {

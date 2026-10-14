@@ -11,3 +11,4 @@ Read SOURCE_OF_TRUTH.md before any task. It is the source of truth. If a request
 - Never use console.log; use the pino logger. Never log passwords or tokens.
 - Do only what the task asks. No extra features, no refactors outside the task.
 - When finished: run typecheck, lint and tests, then give a short plain-English walkthrough of each new file (what it does, why each import exists) and list anything you were unsure about.
+- Keep each file focused on a single, clear responsibility and aim to stay under \~300 lines of code where practical; extract distinct responsibilities into separate modules when files grow significantly, but avoid premature abstraction, unnecessary wrapper functions, excessive layers, and tiny files that add complexity without value. Prioritize high cohesion, readable and self-contained modules, and straightforward code navigation with minimal file-hopping.
