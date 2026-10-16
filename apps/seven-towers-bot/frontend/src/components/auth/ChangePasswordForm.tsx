@@ -10,7 +10,17 @@ import { ApiError } from "@/lib/api";
 import { authApi } from "@/lib/api-auth";
 import { messageForErrorCode } from "@/lib/errors-ui";
 
-export function ChangePasswordForm() {
+export type ChangePasswordFormProps = {
+  /** When set, called after a successful change instead of navigating home. */
+  onSuccess?: () => void;
+  /** Hide the in-form heading when a parent (e.g. Modal) already shows a title. */
+  hideHeading?: boolean;
+};
+
+export function ChangePasswordForm({
+  onSuccess,
+  hideHeading = false,
+}: ChangePasswordFormProps) {
   const { refresh } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -27,7 +37,11 @@ export function ChangePasswordForm() {
       await authApi.changePassword(currentPassword, newPassword);
       await refresh();
       toast("Password updated.", "success");
-      router.replace("/");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.replace("/");
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setFormError(messageForErrorCode(err.code, err.message));
@@ -41,10 +55,18 @@ export function ChangePasswordForm() {
 
   return (
     <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-      <h2 className="text-lg font-medium text-text">Change password</h2>
-      <p className="text-sm text-muted">
-        Choose a new password before continuing.
-      </p>
+      {hideHeading ? (
+        <p className="text-sm text-muted">
+          Enter your current password and choose a new one.
+        </p>
+      ) : (
+        <>
+          <h2 className="text-lg font-medium text-text">Change password</h2>
+          <p className="text-sm text-muted">
+            Choose a new password before continuing.
+          </p>
+        </>
+      )}
       {formError ? (
         <p className="text-sm text-danger" role="alert">
           {formError}
@@ -66,7 +88,7 @@ export function ChangePasswordForm() {
         value={newPassword}
         onChange={(ev) => setNewPassword(ev.target.value)}
       />
-      <Button type="submit" disabled={busy}>
+      <Button type="submit" disabled={busy} className="w-full sm:w-auto">
         {busy ? "Saving…" : "Update password"}
       </Button>
     </form>

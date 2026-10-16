@@ -9,7 +9,7 @@ import {
   MapPin,
   type LucideIcon,
 } from "lucide-react";
-import { APP_NAME, APP_TAGLINE, SUGGESTED_PROMPTS } from "@/lib/config";
+import { APP_NAME, SUGGESTED_PROMPTS } from "@/lib/config";
 import { fadeRise } from "@/lib/motion";
 
 type EmptyStateProps = {
@@ -31,12 +31,9 @@ export function EmptyState({ onPrompt, children }: EmptyStateProps) {
       className="flex w-full max-w-3xl flex-col items-center gap-6 px-2"
       {...fadeRise}
     >
-      <div className="max-w-md space-y-2 px-4 text-center">
-        <h1 className="text-2xl font-semibold text-text sm:text-3xl">
-          {APP_NAME}
-        </h1>
-        <p className="text-muted">{APP_TAGLINE}</p>
-      </div>
+      <h1 className="px-4 text-center text-2xl font-semibold text-text sm:text-3xl">
+        {APP_NAME}
+      </h1>
 
       {children}
 

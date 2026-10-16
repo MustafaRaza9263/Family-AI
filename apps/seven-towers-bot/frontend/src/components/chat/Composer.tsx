@@ -112,16 +112,17 @@ export function Composer({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-3xl px-4",
+        "mx-auto w-full max-w-3xl",
         placement === "bottom"
-          ? "pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2"
-          : "py-0",
+          ? // Overlay the transcript so messages scroll under the field.
+            "pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2"
+          : "px-4 py-0",
       )}
     >
       <div
         className={cn(
-          "flex items-end gap-2 bg-surface-2 px-4 py-2",
-          multiLine ? "rounded-lg" : "rounded-full",
+          "composer-shell pointer-events-auto flex items-center gap-2 px-3 py-1.5",
+          multiLine ? "rounded-[22px]" : "rounded-[30px]",
         )}
       >
         {/* overflow:hidden clips WebKit scrollbar + resize grip outside the pill */}
@@ -156,7 +157,7 @@ export function Composer({
             onCompositionEnd={() => setComposing(false)}
           />
         </div>
-        <div className="flex h-9 shrink-0 items-center gap-2 self-end">
+        <div className="flex h-9 shrink-0 items-center gap-2">
           {showCounter ? (
             <span
               className={cn(

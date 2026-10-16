@@ -45,15 +45,21 @@ export function MessageList({
   };
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="absolute inset-0">
+      {/*
+        Full-pane scrollport (not just the text column) so wheel/touch
+        anywhere on the screen scrolls the transcript.
+      */}
       <div
         ref={scrollerRef}
         onScroll={onScroll}
-        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 scrollbar-none"
+        className="h-full w-full overflow-y-auto overscroll-contain scrollbar-none"
       >
-        {messages.map((message) => (
-          <MessageItem key={message.id} message={message} onRetry={onRetry} />
-        ))}
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pb-28 pt-[max(7.25rem,calc(env(safe-area-inset-top)+5.75rem))] lg:pb-28 lg:pt-28">
+          {messages.map((message) => (
+            <MessageItem key={message.id} message={message} onRetry={onRetry} />
+          ))}
+        </div>
       </div>
       <ScrollToBottom visible={showJump} onClick={() => scrollToBottom()} />
       <p className="sr-only" aria-live="polite">

@@ -7,9 +7,12 @@ export const spring: Transition = {
   damping: 32,
 };
 
-/** Fixed chrome control size — open/close toggles must stay the same size. */
+/** Floating iOS control — round glass icon button. */
 export const CHROME_ICON =
-  "size-10 shrink-0 rounded-full glass text-text hover:bg-surface-2";
+  "size-12 shrink-0 rounded-full glass text-text hover:bg-[color-mix(in_srgb,var(--text)_10%,transparent)]";
+
+/** Alias kept for sidebar / standalone call sites. */
+export const CHROME_ICON_STANDALONE = CHROME_ICON;
 
 export const fadeRise = {
   initial: { opacity: 0, y: 8 },

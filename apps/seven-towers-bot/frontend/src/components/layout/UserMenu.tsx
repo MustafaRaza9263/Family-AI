@@ -1,18 +1,33 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronUp, KeyRound, LogOut, Shield } from "lucide-react";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar } from "@/components/ui/Avatar";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { cn } from "@/lib/cn";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function UserMenu() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+
+  const handleConfirmLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setLoggingOut(false);
+      setConfirmLogout(false);
+    }
+  }, [logout]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,20 +69,25 @@ export function UserMenu() {
           </div>
 
           <div className="px-3 py-3">
-            <p className="mb-2 text-xs font-medium text-muted">Theme</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Theme
+            </p>
             <ThemeToggle />
           </div>
 
           <div className="flex flex-col p-1">
-            <Link
-              href="/change-password/"
+            <button
+              type="button"
               role="menuitem"
-              className="flex items-center gap-2 rounded-md px-3 py-2.5 text-sm text-text hover:bg-surface-2"
-              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm text-text hover:bg-surface-2"
+              onClick={() => {
+                setOpen(false);
+                setChangePasswordOpen(true);
+              }}
             >
               <KeyRound className="size-4 text-muted" aria-hidden />
               Change password
-            </Link>
+            </button>
             {user.role === "admin" ? (
               <Link
                 href="/admin/"
@@ -85,7 +105,7 @@ export function UserMenu() {
               className="flex items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm text-danger hover:bg-surface-2"
               onClick={() => {
                 setOpen(false);
-                void logout();
+                setConfirmLogout(true);
               }}
             >
               <LogOut className="size-4" aria-hidden />
@@ -120,6 +140,23 @@ export function UserMenu() {
           aria-hidden
         />
       </button>
+
+      <ChangePasswordDialog
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmLogout}
+        onClose={() => setConfirmLogout(false)}
+        onConfirm={() => {
+          void handleConfirmLogout();
+        }}
+        title="Log out?"
+        description="You will need to sign in again to continue."
+        confirmLabel={loggingOut ? "Logging out…" : "Log out"}
+        confirming={loggingOut}
+      />
     </div>
   );
 }

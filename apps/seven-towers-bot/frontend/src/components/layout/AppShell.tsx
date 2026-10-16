@@ -51,6 +51,9 @@ export function AppShell({
   );
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
+  const showDrawer = !isDesktop && sidebarOpen;
+  const desktopWidth = sidebarCollapsed ? 0 : sidebarWidth;
+
   useEffect(() => {
     const mq = window.matchMedia(DESKTOP_MQ);
     const update = (): void => setIsDesktop(mq.matches);
@@ -58,6 +61,15 @@ export function AppShell({
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
+
+  useEffect(() => {
+    if (!showDrawer) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onSidebarOpenChange(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showDrawer, onSidebarOpenChange]);
 
   const onResizePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -88,9 +100,6 @@ export function AppShell({
     },
     [],
   );
-
-  const showDrawer = !isDesktop && sidebarOpen;
-  const desktopWidth = sidebarCollapsed ? 0 : sidebarWidth;
 
   return (
     <div className="flex h-dvh overflow-hidden bg-bg">
@@ -145,7 +154,8 @@ export function AppShell({
       </AnimatePresence>
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between px-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:hidden">
+        {/* Floating controls — independent buttons, not a solid header bar. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between px-[15px] pt-[max(18px,env(safe-area-inset-top))] lg:hidden">
           <div className="pointer-events-auto flex items-center gap-2">
             <IconButton
               label="Open conversations"
@@ -162,7 +172,7 @@ export function AppShell({
               <Plus className="size-5" />
             </IconButton>
           </div>
-          <div className="pointer-events-auto rounded-full glass p-1">
+          <div className="pointer-events-auto">
             <ThemeToggle compact />
           </div>
         </div>

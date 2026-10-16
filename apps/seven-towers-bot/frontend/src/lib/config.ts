@@ -1,5 +1,8 @@
 export const APP_NAME = "Seven Towers Assistant";
 
+/** Short brand shown in the chat sidebar header. */
+export const APP_SHORT_NAME = "7Chat";
+
 export const PROJECT_ID = "seven-towers";
 
 /** Must match backend MAX_MESSAGE_CHARS. */
@@ -17,6 +20,3 @@ export const SUPPORT_TEXT =
 
 export const PRIVACY_NOTICE =
   "Your chats are stored and can be viewed by our staff.";
-
-export const APP_TAGLINE =
-  "Ask anything about Seven Towers — units, prices, and plans.";

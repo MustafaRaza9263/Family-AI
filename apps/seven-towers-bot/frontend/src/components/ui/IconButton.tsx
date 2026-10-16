@@ -24,7 +24,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         disabled={disabled}
         whileTap={disabled ? undefined : { scale: 0.97 }}
         className={cn(
-          "inline-flex size-11 items-center justify-center rounded-md text-muted",
+          "inline-flex size-11 items-center justify-center rounded-full text-muted",
           "hover:bg-surface-2 hover:text-text disabled:opacity-40",
           className,
         )}

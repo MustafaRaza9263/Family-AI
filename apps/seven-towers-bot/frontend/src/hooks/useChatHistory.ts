@@ -10,6 +10,10 @@ import type { Message } from "@/lib/types";
  * Loads history when the user switches conversations.
  * Skips abort+reload on null→id while `streaming` (first-message SSE meta
  * updates the URL mid-stream; reloading would wipe tokens and abort).
+ *
+ * On reload with ?c= already in the URL, conversationId is set on the first
+ * render. We must still fetch — so "same id" skip only applies after a prior
+ * effect run has synced that id (not on the initial undefined state).
  */
 export function useChatHistory(
   conversationId: string | null,
@@ -17,27 +21,32 @@ export function useChatHistory(
   streaming: boolean,
 ) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Show spinner immediately when restoring from ?c= (avoids empty-state flash).
+  const [loading, setLoading] = useState(() => Boolean(conversationId));
   const [error, setError] = useState<string | null>(null);
-  const activeRef = useRef(conversationId);
+  /** undefined = never synced (covers initial mount / Strict Mode remount). */
+  const syncedIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    const previousId = activeRef.current;
+    const previousId = syncedIdRef.current;
 
-    // Same conversation — e.g. streaming flipped to false after meta URL sync.
-    if (previousId === conversationId) {
+    // Same conversation after we've already synced — e.g. streaming flipped
+    // to false after meta URL sync.
+    if (previousId !== undefined && previousId === conversationId) {
       return;
     }
 
     // First reply: URL gained ?c= while the stream is still open.
     if (previousId === null && conversationId && streaming) {
-      activeRef.current = conversationId;
+      syncedIdRef.current = conversationId;
       return;
     }
 
-    activeRef.current = conversationId;
+    const previousSynced = previousId;
+    syncedIdRef.current = conversationId;
     onSwitch();
     let cancelled = false;
+    let completed = false;
 
     void (async () => {
       if (!conversationId) {
@@ -45,6 +54,7 @@ export function useChatHistory(
           setMessages([]);
           setLoading(false);
           setError(null);
+          completed = true;
         }
         return;
       }
@@ -52,9 +62,10 @@ export function useChatHistory(
       if (!cancelled) setLoading(true);
       try {
         const res = await chatApi.getConversation(conversationId);
-        if (cancelled || activeRef.current !== conversationId) return;
+        if (cancelled || syncedIdRef.current !== conversationId) return;
         setMessages(res.messages);
         setError(null);
+        completed = true;
       } catch (err: unknown) {
         if (cancelled) return;
         setError(
@@ -63,6 +74,7 @@ export function useChatHistory(
             : messageForErrorCode("NETWORK"),
         );
         setMessages([]);
+        completed = true;
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -70,6 +82,11 @@ export function useChatHistory(
 
     return () => {
       cancelled = true;
+      // Strict Mode remounts cancel the in-flight fetch; revert so the next
+      // effect run does not treat the id as already loaded.
+      if (!completed) {
+        syncedIdRef.current = previousSynced;
+      }
     };
   }, [conversationId, onSwitch, streaming]);
 

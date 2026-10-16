@@ -73,6 +73,7 @@ export function ChatPage() {
           }}
           onLoadMore={() => void loadMore()}
           onCollapse={() => setSidebarCollapsed(true)}
+          onClose={() => setSidebarOpen(false)}
           footer={<UserMenu />}
         />
       }
@@ -104,26 +105,27 @@ export function ChatPage() {
             </EmptyState>
           </div>
         ) : (
-          <>
-            <div
-              className={cn(
-                "mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col pt-14 lg:pt-0",
-                sidebarCollapsed && "lg:pl-14",
-              )}
-            >
-              <MessageList
-                messages={chat.messages}
-                statusMessage={chat.statusMessage}
-                onRetry={chat.retryLast}
-              />
-            </div>
+          <div
+            className={cn(
+              "relative isolate min-h-0 flex-1",
+              sidebarCollapsed && "lg:pl-14",
+            )}
+          >
+            <MessageList
+              messages={chat.messages}
+              statusMessage={chat.statusMessage}
+              onRetry={chat.retryLast}
+            />
+            {/* Full-pane fades — sit above transcript, under composer/chrome */}
+            <div className="chat-fade-top" aria-hidden />
+            <div className="chat-fade-bottom" aria-hidden />
             <Composer
               placement="bottom"
               onSend={(t) => void chat.send(t)}
               onStop={chat.stop}
               streaming={chat.streaming}
             />
-          </>
+          </div>
         )}
       </motion.div>
     </AppShell>
