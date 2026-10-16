@@ -1,4 +1,3 @@
-import { loadSystemMarkdown } from '../services/prompt.service';
 import { logger } from '../lib/logger';
 
 export const EMPTY_ANSWER_FALLBACK =
@@ -11,23 +10,16 @@ export type OutputGuardResult = {
   emittedFallback: boolean;
 };
 
-let systemMdCache: string | null = null;
-
-async function getSystemMd(): Promise<string> {
-  if (!systemMdCache) {
-    systemMdCache = await loadSystemMarkdown();
-  }
-  return systemMdCache;
-}
-
 /**
  * Post-answer checks.
  * Streamed text cannot be retracted, so most findings are flags/logs only;
  * empty answers get a fallback message that is also emitted as a token.
+ * Pass the project's system.md so leak detection stays tied to the loaded pack.
  */
 export async function guardOutput(
   text: string,
   finishReason: string,
+  systemMd: string,
 ): Promise<OutputGuardResult> {
   const guardFlags: string[] = [];
   let out = text;
@@ -45,7 +37,6 @@ export async function guardOutput(
     logger.warn({ flag: 'truncated' }, 'Model output hit length limit');
   }
 
-  const systemMd = await getSystemMd();
   if (containsVerbatimChunk(out, systemMd, 60)) {
     guardFlags.push('possible_prompt_leak');
     logger.warn({ flag: 'possible_prompt_leak' }, 'Possible system prompt leak');
@@ -65,8 +56,4 @@ function containsVerbatimChunk(answer: string, source: string, minLen: number): 
     }
   }
   return false;
-}
-
-export function clearOutputGuardCache(): void {
-  systemMdCache = null;
 }

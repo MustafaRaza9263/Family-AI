@@ -4,7 +4,6 @@ import { Copy } from "lucide-react";
 import type { ReactNode } from "react";
 import { copyText } from "@/lib/errors-ui";
 import type { Attachment, Message } from "@/lib/types";
-import { IconButton } from "@/components/ui/IconButton";
 import { Attachments } from "@/components/rich/Attachments";
 import { Markdown } from "./Markdown";
 import { MessageError } from "./MessageError";
@@ -43,18 +42,11 @@ export function MessageItem({
 
   const showCaret =
     message.streaming && !message.content && !message.errorCode;
+  const showCopy =
+    Boolean(message.content) && !message.streaming && !message.errorCode;
 
   return (
     <article className="w-full text-sm">
-      <div className="mb-1 flex items-center justify-end gap-1">
-        <IconButton
-          label="Copy reply"
-          onClick={() => void copyText(message.content)}
-          disabled={!message.content}
-        >
-          <Copy className="size-4" />
-        </IconButton>
-      </div>
       {message.errorCode ? (
         <MessageError
           message={message.errorMessage ?? "Something went wrong."}
@@ -69,11 +61,27 @@ export function MessageItem({
           ) : null}
           {showCaret ? <TypingIndicator /> : null}
           {message.streaming && message.content ? (
-            <span className="ml-0.5 inline-block w-0.5 animate-pulse bg-accent" aria-hidden />
+            <span
+              className="ml-0.5 inline-block w-0.5 animate-pulse bg-accent"
+              aria-hidden
+            />
           ) : null}
         </>
       )}
       {attachmentSlot}
+      {showCopy ? (
+        <div className="mt-2 flex items-center">
+          <button
+            type="button"
+            aria-label="Copy reply"
+            title="Copy"
+            onClick={() => void copyText(message.content)}
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <Copy className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }

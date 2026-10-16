@@ -109,7 +109,11 @@ export async function handleChat(options: {
     throw err;
   }
 
-  const output = await guardOutput(result.text, result.finishReason);
+  const output = await guardOutput(
+    result.text,
+    result.finishReason,
+    project.systemMd,
+  );
   if (output.emittedFallback && !options.sse.closed) {
     options.sse.send('token', { text: output.text });
   }

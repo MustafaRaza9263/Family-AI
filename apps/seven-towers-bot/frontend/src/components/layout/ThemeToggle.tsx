@@ -10,14 +10,24 @@ const options: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "dark", label: "Dark", icon: Moon },
 ];
 
-export function ThemeToggle() {
+type ThemeToggleProps = {
+  /** Smaller circular hits for glass mobile chrome. */
+  compact?: boolean;
+};
+
+export function ThemeToggle({ compact = false }: ThemeToggleProps) {
   const { preference, setPreference } = useTheme();
 
   return (
     <div
       role="group"
       aria-label="Theme"
-      className="flex rounded-md border border-border bg-surface-2 p-1"
+      className={cn(
+        "flex p-1",
+        compact
+          ? "gap-0.5"
+          : "rounded-md border border-border bg-surface-2",
+      )}
     >
       {options.map(({ value, label, icon: Icon }) => (
         <button
@@ -27,7 +37,8 @@ export function ThemeToggle() {
           aria-label={label}
           onClick={() => setPreference(value)}
           className={cn(
-            "inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-sm px-2",
+            "inline-flex items-center justify-center rounded-full",
+            compact ? "size-8" : "min-h-[36px] min-w-[36px] rounded-sm px-2",
             preference === value
               ? "bg-surface text-text"
               : "text-muted hover:text-text",

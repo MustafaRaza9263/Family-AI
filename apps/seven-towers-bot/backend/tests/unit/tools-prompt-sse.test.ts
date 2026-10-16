@@ -12,43 +12,56 @@ import type { Response } from 'express';
 describe('tools.service', () => {
   const project = createFakeKnowledge().getProject('seven-towers');
 
-  it('drops unknown image ids', () => {
+  it('drops unknown image names and suggests closest', () => {
     const result = executeTool(
       project,
       'show_images',
-      JSON.stringify({ ids: ['sample-floor-plan', 'nope'] }),
+      JSON.stringify({ files: ['sample-floor-plan', 'sampl-floor-plan'] }),
     );
     expect(result.attachment?.type).toBe('images');
     if (result.attachment?.type === 'images') {
       expect(result.attachment.items).toHaveLength(1);
     }
-    expect(result.toolResultText).toMatch(/Invalid/);
+    expect(result.toolResultText).toMatch(/Unknown image names/);
+    expect(result.toolResultText).toMatch(/sample-floor-plan/);
   });
 
-  it('rejects wrong type for show_table', () => {
+  it('rejects unknown table id with suggestions', () => {
     const result = executeTool(
       project,
       'show_table',
-      JSON.stringify({ id: 'sample-floor-plan' }),
+      JSON.stringify({ id: 'sample-payment-pln' }),
     );
     expect(result.attachment).toBeNull();
+    expect(result.toolResultText).toMatch(/Unknown table id/);
+    expect(result.toolResultText).toMatch(/sample-payment-plan/);
+  });
+
+  it('shows table by id', () => {
+    const result = executeTool(
+      project,
+      'show_table',
+      JSON.stringify({ id: 'sample-payment-plan' }),
+    );
+    expect(result.attachment?.type).toBe('table');
+    if (result.attachment?.type === 'table') {
+      expect(result.attachment.id).toBe('sample-payment-plan');
+      expect(result.attachment.columns[0]?.key).toBe('0');
+    }
   });
 });
 
 describe('prompt.service', () => {
-  it('builds sections in order', async () => {
+  it('builds system.md then KNOWLEDGE BASE then raw knowledge.md', async () => {
     clearPromptCache();
     const project = createFakeKnowledge().getProject('seven-towers');
     const prompt = await buildSystemPrompt(project);
-    // Match section headers as whole lines so body text mentioning TABLES does not confuse order.
-    const doc = prompt.search(/\nDOCUMENT\n/);
-    const prices = prompt.search(/\nPRICES \(last updated:/);
-    const tables = prompt.search(/\nTABLES\n/);
-    const catalog = prompt.search(/\nCATALOG\n/);
-    expect(doc).toBeGreaterThan(-1);
-    expect(prices).toBeGreaterThan(doc);
-    expect(tables).toBeGreaterThan(prices);
-    expect(catalog).toBeGreaterThan(tables);
+    expect(prompt.startsWith(project.systemMd.trim())).toBe(true);
+    const kb = prompt.indexOf('\n\n# KNOWLEDGE BASE\n');
+    expect(kb).toBeGreaterThan(-1);
+    expect(prompt.slice(kb + '\n\n# KNOWLEDGE BASE\n'.length)).toBe(project.knowledgeMd);
+    expect(prompt).not.toMatch(/\nCATALOG\n/);
+    expect(prompt).not.toMatch(/\nTABLES\n/);
   });
 
   it('appends history attachment marker', async () => {

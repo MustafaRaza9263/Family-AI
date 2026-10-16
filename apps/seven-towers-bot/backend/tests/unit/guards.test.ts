@@ -51,15 +51,17 @@ describe('context.guard', () => {
 });
 
 describe('output.guard', () => {
+  const systemMd = 'You are a helpful assistant for testing.';
+
   it('replaces empty output with fallback', async () => {
-    const result = await guardOutput('   ', 'stop');
+    const result = await guardOutput('   ', 'stop', systemMd);
     expect(result.text).toBe(EMPTY_ANSWER_FALLBACK);
     expect(result.guardFlags).toContain('empty_output');
     expect(result.emittedFallback).toBe(true);
   });
 
   it('flags truncated answers', async () => {
-    const result = await guardOutput('partial answer', 'length');
+    const result = await guardOutput('partial answer', 'length', systemMd);
     expect(result.guardFlags).toContain('truncated');
   });
 });

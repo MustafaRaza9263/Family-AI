@@ -38,7 +38,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
-      <body className="min-h-dvh bg-bg text-text antialiased">
+      <body className="min-h-dvh bg-bg text-text antialiased" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -4,5 +4,6 @@ dist
 .env
 *.log
 
-# Original image sources (converted WebP lives in assets/images/)
+# Original image sources (converted WebP lives in images/)
+apps/*/backend/knowledge/**/source/
 apps/*/backend/knowledge/**/assets/source/

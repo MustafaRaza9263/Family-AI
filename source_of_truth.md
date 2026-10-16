@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-10-14
+> Last updated: 2026-10-16
 
 ## 1. What this is
 
@@ -45,8 +45,7 @@ company-ai/
 │   └── seven-towers-bot/
 │       ├── backend/        Express + TypeScript API
 │       │   ├── src/        config · routes · controllers · services · guardrails · middleware · lib
-│       │   ├── knowledge/<project>/   document.md · prices.json · catalog.json · assets/{images,tables}
-│       │   ├── prompts/    system prompt files
+│       │   ├── knowledge/<project>/   system.md · knowledge.md · images/ · source/ (gitignored)
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
@@ -94,8 +93,8 @@ A new *project* for an existing app (for example another property) is just a new
 - **Accounts:** open registration. Anyone signs up with email, full name and phone number (all required; phone stored in E.164 format; contact details are unverified). Roles: `user` (everyone who signs up) and `admin`. Admin sees all users and their full chat sessions, and can disable or reset a user. The first admin is created with `npm run seed:admin`, never through signup. Every admin view of a user's chats is written to `audit_logs`. The signup screen tells users that chats are stored and visible to company staff.
 - **Sessions and passwords:** server-side sessions in an httpOnly cookie, argon2id hashing, no email dependency (password resets are admin-assisted for now).
 - **Chat:** `POST /api/chat` streams over SSE with events `meta`, `token`, `attachment`, `done`, `error`.
-- **Knowledge:** the full document goes in the prompt (no RAG). Prices live in `prices.json` with a "last updated" date. Reload files without restarting vLLM.
-- **Rich results (general tools):** images are stored on the server (`assets/images/`, converted to WebP with thumbnails) and described in `catalog.json` (id, type, title, tags, file). Tables (installment plans, room breakdowns, payment breakdowns) are data files in `assets/tables/`, listed in the same catalog. A compact catalog index (id, title, tags) is part of the prompt. The model calls two generic tools, `show_images(ids, caption?)` and `show_table(id)`. The backend validates every ID against the catalog and emits `attachment` events. The UI renders a gallery with full-screen viewer and a responsive table. The model never writes image URLs or numbers. Image files are served only to logged-in users.
+- **Knowledge:** two files per project (`system.md` + `knowledge.md`). The full knowledge base goes in the prompt (no RAG). Tables and images are parsed from `knowledge.md` (table markers + GFM tables; markdown image refs). `Last updated: YYYY-MM-DD` is required near the top. Reload validates first; on failure the previous in-memory pack is kept. `npm run knowledge:check` uses the same rules.
+- **Rich results (general tools):** images live in `knowledge/<project>/images/` (WebP + thumbs from `source/` via `assets:build`). The model calls `show_images({ files, caption? })` with names as written in the knowledge base (no `images/` prefix or `.webp` suffix) and `show_table({ id })` with a `<!-- table: id -->` marker. Unknown names/ids are dropped and the tool result suggests the closest valid ones. The backend emits `attachment` events; the UI renders a gallery and table. The model never writes image URLs or numbers. Only files in the parsed image map (and their thumbs) are served, and only to logged-in users.
 - **Guards:** message ≤1,500 chars · answer ≤1,024 tokens · last ~10 messages within the context budget · 20 requests/min and 200/day per user · 5 signups/hour per IP · hidden honeypot field on the signup form · max 6 answers in flight (else 503 "busy") · `trust proxy` for real visitor IPs · input injection flags · output fallback message.
 - **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status), `sessions`, `conversations`, `messages`, `audit_logs`.
 - **UI:** premium iOS-style (Open WebUI-inspired layout), animated, responsive (phone, tablet, desktop), light/dark/system theme, safe-area aware, respects reduced motion. Tailwind v4 + Motion. System font stack with self-hosted Inter Variable fallback. No external assets; Express CSP enforces `default-src 'self'` (scripts/styles allow `'unsafe-inline'` for Next static hydration; `upgrade-insecure-requests` disabled for plain-HTTP LAN).
@@ -118,7 +117,7 @@ A new *project* for an existing app (for example another property) is just a new
 - **Errors and logs:** typed errors, one central handler, one JSON error shape; pino JSON logs with request ID; never log passwords.
 - **Tests:** Vitest for guards, prompt builder and auth, with the LLM faked.
 - **Style:** ESLint + Prettier; Conventional Commits (`feat:`, `fix:`, `chore:`); npm (not pnpm).
-- **Versioned content:** prompts, knowledge and catalogs are files in Git, reviewed like code.
+- **Versioned content:** system prompts and knowledge packs are files in Git, reviewed like code.
 - **Evals first:** golden questions (including out-of-scope and attack questions) run on every model, prompt or data change. Benchmark TTFT, tokens/sec and p50/p95 latency before launch.
 - **AI-assisted coding:** Cursor writes code from reviewed prompts, guided by `.cursor/rules/company-ai.mdc`. Every AI-written file is read and understood before commit.
 - **Reuse:** move code to `packages/` only when a second app needs it.
@@ -133,6 +132,7 @@ A new *project* for an existing app (for example another property) is just a new
 | Thinking off by default | Latency; enable only where evals show a gain |
 | Own UI, not Open WebUI | Brand control, rich results; Open WebUI's license requires its branding to stay for >50 users. Keep Open WebUI as an internal playground |
 | Rich results via two general tools (`show_images`, `show_table`) over a server-side catalog | No hallucinated URLs or numbers; reusable across apps |
+| Two files per project; table ids and image names are parsed from the knowledge base | One editable markdown source; no separate catalog/prices/table JSON to keep in sync |
 | Open registration (email, full name, phone required), roles `user` and `admin` | Captures buyer leads; admin sees all users and chats. Contact details are unverified |
 | Server sessions + argon2id | Instant revocation, no token in JavaScript |
 | Local MongoDB, not Atlas | Offline support |
@@ -144,7 +144,7 @@ A new *project* for an existing app (for example another property) is just a new
 - Abuse control for open signup: CAPTCHA services need internet, so start with per-IP limits, honeypot and admin disable; consider WhatsApp/SMS verification later.
 - Password reset for public users (admin-assisted for now; email or WhatsApp reset when online).
 - Wording of the signup privacy notice (chats are stored and visible to staff).
-- Seven Towers document, prices, images, and tables (to enter in the catalog).
+- Seven Towers real `system.md` / `knowledge.md` content (images and tables).
 - Golden question set.
 - Domain name for Cloudflare Tunnel.
 - Backup target for MongoDB.

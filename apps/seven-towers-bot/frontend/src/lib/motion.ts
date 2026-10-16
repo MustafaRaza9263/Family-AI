@@ -7,6 +7,10 @@ export const spring: Transition = {
   damping: 32,
 };
 
+/** Fixed chrome control size — open/close toggles must stay the same size. */
+export const CHROME_ICON =
+  "size-10 shrink-0 rounded-full glass text-text hover:bg-surface-2";
+
 export const fadeRise = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },

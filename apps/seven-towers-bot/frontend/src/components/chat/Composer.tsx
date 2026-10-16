@@ -5,30 +5,68 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { MAX_MESSAGE_CHARS } from "@/lib/config";
 import { isOverMessageLimit, shouldShowCharCounter } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { Button } from "@/components/ui/Button";
-import { IconButton } from "@/components/ui/IconButton";
 
 type ComposerProps = {
   onSend: (text: string) => void;
   onStop: () => void;
   streaming: boolean;
   disabled?: boolean;
+  placement?: "center" | "bottom";
 };
 
 const LINE_HEIGHT_PX = 24;
 const MAX_LINES = 6;
+const MAX_HEIGHT_PX = LINE_HEIGHT_PX * MAX_LINES;
 
-export function Composer({ onSend, onStop, streaming, disabled }: ComposerProps) {
+/** Inline so Tailwind preflight (resize: vertical) cannot win. */
+const FIELD_STYLE: CSSProperties = {
+  appearance: "none",
+  WebkitAppearance: "none",
+  resize: "none",
+  border: "none",
+  outline: "none",
+  boxShadow: "none",
+  background: "transparent",
+  overflowX: "hidden",
+  // Hide scrollbar in Firefox / legacy Edge; WebKit clipped by wrapper below.
+  scrollbarWidth: "none",
+  msOverflowStyle: "none",
+};
+
+export function Composer({
+  onSend,
+  onStop,
+  streaming,
+  disabled,
+  placement = "bottom",
+}: ComposerProps) {
   const [text, setText] = useState("");
   const [composing, setComposing] = useState(false);
   const [finePointer, setFinePointer] = useState(true);
+  const [capped, setCapped] = useState(false);
+  const [fadeTop, setFadeTop] = useState(false);
+  const [fadeBottom, setFadeBottom] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  const updateFades = useCallback((): void => {
+    const el = areaRef.current;
+    if (!el) return;
+    const canScroll = el.scrollHeight > el.clientHeight + 1;
+    if (!canScroll) {
+      setFadeTop(false);
+      setFadeBottom(false);
+      return;
+    }
+    setFadeTop(el.scrollTop > 2);
+    setFadeBottom(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(pointer: fine)");
@@ -41,15 +79,22 @@ export function Composer({ onSend, onStop, streaming, disabled }: ComposerProps)
   useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
+    // Measure unconstrained height first, then cap.
     el.style.height = "auto";
-    const max = LINE_HEIGHT_PX * MAX_LINES;
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
-  }, [text]);
+    el.style.overflowY = "hidden";
+    const contentHeight = el.scrollHeight;
+    const isCapped = contentHeight > MAX_HEIGHT_PX;
+    el.style.height = `${Math.min(contentHeight, MAX_HEIGHT_PX)}px`;
+    el.style.overflowY = isCapped ? "scroll" : "hidden";
+    setCapped(isCapped);
+    updateFades();
+  }, [text, updateFades]);
 
   const trimmed = text.trim();
   const overLimit = isOverMessageLimit(text.length, MAX_MESSAGE_CHARS);
   const showCounter = shouldShowCharCounter(text.length, MAX_MESSAGE_CHARS);
   const canSend = Boolean(trimmed) && !overLimit && !disabled && !streaming;
+  const multiLine = text.includes("\n") || text.length > 48;
 
   const submit = useCallback(() => {
     if (!canSend) return;
@@ -65,22 +110,53 @@ export function Composer({ onSend, onStop, streaming, disabled }: ComposerProps)
   };
 
   return (
-    <div className="glass border-t border-border px-4 py-3">
-      <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow">
-        <textarea
-          ref={areaRef}
-          dir="auto"
-          rows={1}
-          value={text}
-          disabled={disabled}
-          placeholder="Message Seven Towers Assistant…"
-          className="max-h-36 min-h-6 flex-1 resize-none bg-transparent text-sm outline-none"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
-        />
-        <div className="flex flex-col items-end gap-1">
+    <div
+      className={cn(
+        "mx-auto w-full max-w-3xl px-4",
+        placement === "bottom"
+          ? "pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2"
+          : "py-0",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-end gap-2 bg-surface-2 px-4 py-2",
+          multiLine ? "rounded-lg" : "rounded-full",
+        )}
+      >
+        {/* overflow:hidden clips WebKit scrollbar + resize grip outside the pill */}
+        <div
+          className={cn(
+            "min-w-0 flex-1 overflow-hidden",
+            fadeTop && fadeBottom && "composer-fade",
+            fadeTop && !fadeBottom && "composer-fade-top",
+            !fadeTop && fadeBottom && "composer-fade-bottom",
+          )}
+        >
+          <textarea
+            ref={areaRef}
+            dir="auto"
+            rows={1}
+            value={text}
+            disabled={disabled}
+            placeholder="Message Seven Towers Assistant…"
+            style={{
+              ...FIELD_STYLE,
+              // Push native scrollbar into the clipped gutter.
+              width: capped ? "calc(100% + 48px)" : "100%",
+              paddingRight: capped ? 48 : 0,
+              maxHeight: MAX_HEIGHT_PX,
+              overflowY: capped ? "scroll" : "hidden",
+            }}
+            className="composer-input min-h-6 py-2 text-sm leading-6 text-text placeholder:text-muted"
+            onChange={(e) => setText(e.target.value)}
+            onScroll={updateFades}
+            onKeyDown={onKeyDown}
+            onCompositionStart={() => setComposing(true)}
+            onCompositionEnd={() => setComposing(false)}
+          />
+        </div>
+        <div className="flex h-9 shrink-0 items-center gap-2 self-end">
           {showCounter ? (
             <span
               className={cn(
@@ -92,19 +168,27 @@ export function Composer({ onSend, onStop, streaming, disabled }: ComposerProps)
             </span>
           ) : null}
           {streaming ? (
-            <IconButton label="Stop generating" onClick={onStop}>
-              <Square className="size-4 fill-current" />
-            </IconButton>
+            <button
+              type="button"
+              aria-label="Stop generating"
+              onClick={onStop}
+              className="inline-flex size-9 items-center justify-center rounded-full bg-surface text-text hover:bg-border/50"
+            >
+              <Square className="size-3.5 fill-current" />
+            </button>
           ) : (
-            <Button
-              variant="primary"
-              className="size-9 rounded-full p-0"
+            <button
+              type="button"
+              aria-label="Send message"
               disabled={!canSend}
               onClick={submit}
-              aria-label="Send message"
+              className={cn(
+                "inline-flex size-9 items-center justify-center rounded-full",
+                "bg-accent text-accent-text disabled:opacity-40",
+              )}
             >
               <ArrowUp className="size-4" />
-            </Button>
+            </button>
           )}
         </div>
       </div>

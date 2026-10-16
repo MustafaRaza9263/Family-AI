@@ -49,7 +49,7 @@ export function MessageList({
       <div
         ref={scrollerRef}
         onScroll={onScroll}
-        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-6"
+        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 scrollbar-none"
       >
         {messages.map((message) => (
           <MessageItem key={message.id} message={message} onRetry={onRetry} />

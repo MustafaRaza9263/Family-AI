@@ -20,7 +20,7 @@ export function ScrollToBottom({ visible, onClick }: ScrollToBottomProps) {
     >
       <Button
         variant="secondary"
-        className="pointer-events-auto rounded-full shadow-lg glass px-4 py-2"
+        className="pointer-events-auto rounded-full glass px-4 py-2 shadow"
         onClick={onClick}
       >
         <ChevronDown className="size-4" aria-hidden />

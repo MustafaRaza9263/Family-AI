@@ -61,7 +61,7 @@ function GalleryThumb({
       type="button"
       onClick={onOpen}
       className={cn(
-        "relative overflow-hidden rounded-md border border-border bg-surface-2",
+        "relative overflow-hidden rounded-lg bg-surface-2",
         large ? "aspect-[4/3]" : "aspect-square",
       )}
       aria-label={`Open ${title}`}

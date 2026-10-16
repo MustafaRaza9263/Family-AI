@@ -4,7 +4,10 @@ import { connect, disconnect } from './db/connection';
 import { logger } from './lib/logger';
 import { abortAllChats } from './middleware/chat-gates';
 import { logPromptSize } from './guardrails/context.guard';
-import { createKnowledgeStore } from './services/knowledge.service';
+import {
+  createKnowledgeStore,
+  KnowledgePackError,
+} from './services/knowledge.service';
 import { createLlmClient } from './services/llm.service';
 import { buildSystemPrompt } from './services/prompt.service';
 
@@ -20,6 +23,11 @@ async function main(): Promise<void> {
   try {
     await knowledge.loadAll();
   } catch (err) {
+    if (err instanceof KnowledgePackError) {
+      for (const issue of err.errors) {
+        logger.error({ line: issue.line }, issue.message);
+      }
+    }
     logger.fatal({ err }, 'Failed to load knowledge packs');
     process.exit(1);
   }

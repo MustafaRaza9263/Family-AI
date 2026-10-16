@@ -7,38 +7,31 @@ export function createFakeKnowledge(
 ): KnowledgeStore {
   const project: ProjectKnowledge = {
     projectId: 'seven-towers',
-    document: 'Doc body',
-    prices: {
-      updatedAt: '2026-01-15',
-      currency: 'PKR',
-      items: [{ id: '1bed', label: '1-bed', price: 1 }],
-    },
-    catalog: [
-      {
-        id: 'sample-floor-plan',
-        type: 'image',
-        title: 'Sample floor plan',
-        tags: ['floor-plan'],
-        file: 'sample-floor-plan',
-      },
-      {
-        id: 'sample-payment-plan',
-        type: 'table',
-        title: 'Sample payment plan',
-        tags: ['payment'],
-        file: 'sample-payment-plan.json',
-      },
-    ],
+    systemMd: 'You are a helpful assistant.',
+    knowledgeMd:
+      'Last updated: 2026-01-15\n\n# Doc\n\nDoc body\n\n![Sample floor plan](images/sample-floor-plan.webp)\n',
+    lastUpdated: '2026-01-15',
     tables: new Map([
       [
         'sample-payment-plan',
         {
+          id: 'sample-payment-plan',
           title: 'Sample payment plan',
           columns: [
-            { key: 'milestone', label: 'Milestone' },
-            { key: 'percent', label: '%' },
+            { key: '0', label: 'Milestone', align: 'left' as const },
+            { key: '1', label: '%', align: 'right' as const },
           ],
-          rows: [{ milestone: 'Booking', percent: 10 }],
+          rows: [{ '0': 'Booking', '1': '10' }],
+        },
+      ],
+    ]),
+    images: new Map([
+      [
+        'sample-floor-plan',
+        {
+          alt: 'Sample floor plan',
+          url: '/api/assets/seven-towers/images/sample-floor-plan',
+          thumbUrl: '/api/assets/seven-towers/images/sample-floor-plan?thumb=1',
         },
       ],
     ]),
@@ -68,6 +61,7 @@ export function createPlainLlm(text = 'Hello from the bot.'): LlmClient {
   return {
     async ping() {},
     async *streamChat(_params: StreamChatParams): AsyncIterable<LlmStreamChunk> {
+      void _params;
       yield { type: 'token', text };
       yield {
         type: 'finish',
@@ -84,6 +78,7 @@ export function createToolLlm(): LlmClient {
   return {
     async ping() {},
     async *streamChat(_params: StreamChatParams): AsyncIterable<LlmStreamChunk> {
+      void _params;
       calls += 1;
       if (calls === 1) {
         yield {
@@ -91,7 +86,7 @@ export function createToolLlm(): LlmClient {
           index: 0,
           id: 'call_1',
           name: 'show_images',
-          argumentsDelta: '{"ids":["sample-floor-plan"]}',
+          argumentsDelta: '{"files":["sample-floor-plan"]}',
         };
         yield { type: 'finish', reason: 'tool_calls' };
         return;

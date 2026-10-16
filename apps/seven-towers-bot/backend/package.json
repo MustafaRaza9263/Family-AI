@@ -12,6 +12,7 @@
     "lint": "eslint src",
     "format": "prettier --write .",
     "assets:build": "tsx scripts/build-assets.ts",
+    "knowledge:check": "tsx scripts/knowledge-check.ts",
     "seed:admin": "tsx scripts/seed-admin.ts"
   },
   "keywords": [],

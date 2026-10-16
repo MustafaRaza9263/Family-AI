@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { copyText } from "@/lib/errors-ui";
-import { IconButton } from "@/components/ui/IconButton";
 
 type MarkdownCodeBlockProps = {
   code: string;
@@ -22,22 +21,26 @@ export function MarkdownCodeBlock({ code, language }: MarkdownCodeBlockProps) {
   };
 
   return (
-    <div className="group relative my-3 overflow-hidden rounded-md border border-border bg-surface">
+    <div className="group relative my-3 overflow-hidden rounded-lg bg-surface-2">
       {language ? (
-        <span className="block border-b border-border px-3 py-1 text-xs text-muted">
-          {language}
-        </span>
+        <span className="block px-3 py-1 text-xs text-muted">{language}</span>
       ) : null}
-      <pre className="overflow-x-auto p-3 text-sm">
+      <pre className="overflow-x-auto p-3 text-sm scrollbar-none">
         <code>{code}</code>
       </pre>
-      <IconButton
-        label={copied ? "Copied" : "Copy code"}
-        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+      <button
+        type="button"
+        aria-label={copied ? "Copied" : "Copy code"}
+        title={copied ? "Copied" : "Copy"}
         onClick={onCopy}
+        className="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-md text-muted opacity-0 hover:bg-surface hover:text-text group-hover:opacity-100"
       >
-        {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-      </IconButton>
+        {copied ? (
+          <Check className="size-3.5" />
+        ) : (
+          <Copy className="size-3.5" strokeWidth={1.75} />
+        )}
+      </button>
     </div>
   );
 }

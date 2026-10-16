@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { Conversation } from "@/lib/types";
 import type { DateGroup } from "@/lib/format";
-import { groupByDate, truncate } from "@/lib/format";
+import { groupByDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -77,12 +77,13 @@ export function ConversationList({
                 <button
                   type="button"
                   onClick={() => onSelect(item.id)}
+                  title={item.title || "New chat"}
                   className={cn(
-                    "w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2",
+                    "block w-full truncate whitespace-nowrap rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2",
                     item.id === activeId && "bg-surface-2 font-medium text-text",
                   )}
                 >
-                  {truncate(item.title || "New chat", 42)}
+                  {item.title || "New chat"}
                 </button>
               </li>
             ))}

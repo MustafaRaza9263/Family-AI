@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { PanelLeftClose, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Conversation } from "@/lib/types";
-import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
+import { CHROME_ICON } from "@/lib/motion";
 import { ConversationList } from "./ConversationList";
 
 type SidebarProps = {
@@ -15,6 +16,7 @@ type SidebarProps = {
   onNewChat: () => void;
   onSelect: (id: string) => void;
   onLoadMore: () => void;
+  onCollapse?: () => void;
   footer?: ReactNode;
 };
 
@@ -27,17 +29,31 @@ export function Sidebar({
   onNewChat,
   onSelect,
   onLoadMore,
+  onCollapse,
   footer,
 }: SidebarProps) {
   return (
-    <aside className="flex h-full w-72 flex-col border-r border-border bg-surface">
-      <div className="p-3">
-        <Button variant="secondary" className="w-full justify-start gap-2" onClick={onNewChat}>
-          <Plus className="size-4" aria-hidden />
-          New chat
-        </Button>
+    <aside className="flex h-full w-full flex-col bg-surface">
+      <div className="flex items-center gap-1 p-2">
+        {onCollapse ? (
+          <IconButton
+            label="Hide sidebar"
+            className={`hidden lg:inline-flex ${CHROME_ICON}`}
+            onClick={onCollapse}
+          >
+            <PanelLeftClose className="size-5" />
+          </IconButton>
+        ) : null}
+        <button
+          type="button"
+          onClick={onNewChat}
+          className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md bg-surface-2 px-3 text-sm font-medium text-text hover:bg-border/40"
+        >
+          <Plus className="size-4 shrink-0" aria-hidden />
+          <span className="truncate">New chat</span>
+        </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none">
         <ConversationList
           items={conversations}
           activeId={activeId}
@@ -48,9 +64,7 @@ export function Sidebar({
           onLoadMore={onLoadMore}
         />
       </div>
-      {footer ? (
-        <div className="border-t border-border p-3">{footer}</div>
-      ) : null}
+      {footer ? <div className="p-2">{footer}</div> : null}
     </aside>
   );
 }

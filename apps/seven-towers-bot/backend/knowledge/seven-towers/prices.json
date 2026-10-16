@@ -1,9 +1,0 @@
-{
-  "updatedAt": "2026-01-15",
-  "currency": "PKR",
-  "items": [
-    { "id": "1bed", "label": "1-bedroom apartment", "price": 12500000 },
-    { "id": "2bed", "label": "2-bedroom apartment", "price": 18500000 },
-    { "id": "3bed", "label": "3-bedroom apartment", "price": 24500000 }
-  ]
-}

@@ -28,7 +28,8 @@
   --bg: #000000;
   --surface: #1c1c1e;
   --surface-2: #2c2c2e;
-  --border: rgba(84, 84, 88, 0.65);
+  /* Soft separator — high-contrast borders read as unfinished UI */
+  --border: rgba(84, 84, 88, 0.32);
   --text: #ffffff;
   --muted: rgba(235, 235, 245, 0.6);
   --accent: #0a84ff;
@@ -83,6 +84,14 @@ body {
   outline-offset: 2px;
 }
 
+/* Composer / fields use container focus — never a UA blue box */
+textarea:focus,
+textarea:focus-visible,
+input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):focus-visible {
+  outline: none;
+}
+
 .glass {
   background: var(--glass);
   backdrop-filter: saturate(180%) blur(var(--blur));
@@ -91,4 +100,93 @@ body {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Hide scrollbars; scrolling still works (ChatGPT / Open WebUI style) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Chat composer: beat Tailwind preflight (textarea { resize: vertical }) */
+textarea.composer-input {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  resize: none !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+textarea.composer-input::-webkit-scrollbar,
+textarea.composer-input::-webkit-scrollbar-thumb,
+textarea.composer-input::-webkit-scrollbar-track {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+/* Native bottom-right resize grip */
+textarea.composer-input::-webkit-resizer {
+  display: none !important;
+  background: transparent !important;
+}
+
+textarea.composer-input:focus,
+textarea.composer-input:focus-visible,
+textarea.composer-input:active {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Top / bottom fades when the field is scrolled at max height */
+.composer-fade {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+}
+
+.composer-fade-top {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14px,
+    #000 100%
+  );
+}
+
+.composer-fade-bottom {
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
 }

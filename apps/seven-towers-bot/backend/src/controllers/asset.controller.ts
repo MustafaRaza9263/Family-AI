@@ -13,15 +13,12 @@ export function createAssetController(knowledge: KnowledgeStore) {
     const wantThumb = req.query.thumb === '1';
 
     const project = knowledge.getProject(projectId);
-    const entry = project.catalog.find(
-      (c) => c.type === 'image' && c.file === file,
-    );
-    if (!entry) {
+    if (!project.images.has(file)) {
       throw new AppError(404, ErrorCodes.NOT_FOUND, 'Asset not found');
     }
 
-    const fileName = wantThumb ? `${entry.file}.thumb.webp` : `${entry.file}.webp`;
-    const abs = path.join(project.rootDir, 'assets', 'images', fileName);
+    const fileName = wantThumb ? `${file}.thumb.webp` : `${file}.webp`;
+    const abs = path.join(project.rootDir, 'images', fileName);
 
     try {
       await fs.access(abs);

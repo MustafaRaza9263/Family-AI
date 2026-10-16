@@ -75,7 +75,7 @@ describe.skipIf(!hasTestDb)('admin + assets integration', () => {
     expect(rows.length).toBe(1);
   });
 
-  it('assets only serve catalog files', async () => {
+  it('assets only serve files in the parsed image map', async () => {
     const user = await makeUser('assets@example.com', 'user');
 
     const ok = await user.get(
@@ -85,7 +85,7 @@ describe.skipIf(!hasTestDb)('admin + assets integration', () => {
     expect(ok.headers['content-type']).toMatch(/image\/webp/);
 
     const missing = await user.get(
-      '/api/assets/seven-towers/images/not-in-catalog',
+      '/api/assets/seven-towers/images/not-in-knowledge',
     );
     expect(missing.status).toBe(404);
   });

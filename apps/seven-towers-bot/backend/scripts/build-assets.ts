@@ -1,5 +1,5 @@
 /**
- * Convert source images to WebP + thumbnails for a knowledge pack.
+ * Convert source/ images to images/ WebP + thumbnails for a knowledge pack.
  *
  * Usage:
  *   npm run assets:build -- --project seven-towers
@@ -9,7 +9,16 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
-type ResultRow = { name: string; webp: string; thumb: string; status: string };
+const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+function slugify(base: string): string {
+  const slug = base
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+  return slug;
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -23,8 +32,8 @@ async function main(): Promise<void> {
   }
 
   const root = path.resolve(__dirname, '..', 'knowledge', project);
-  const sourceDir = path.join(root, 'assets', 'source');
-  const imagesDir = path.join(root, 'assets', 'images');
+  const sourceDir = path.join(root, 'source');
+  const imagesDir = path.join(root, 'images');
   await fs.mkdir(imagesDir, { recursive: true });
 
   if (placeholder) {
@@ -52,13 +61,28 @@ async function main(): Promise<void> {
     console.warn(`No source dir at ${sourceDir}`);
   }
 
-  const rows: ResultRow[] = [];
-
+  const planned = new Map<string, string>();
   for (const file of sources) {
     const base = path.parse(file).name.replace(/\.thumb$/, '');
+    const slug = slugify(base);
+    if (!NAME_RE.test(slug)) {
+      console.error(`Refuse: cannot slugify "${file}" to a valid kebab-case name`);
+      process.exit(1);
+    }
+    const prev = planned.get(slug);
+    if (prev) {
+      console.error(`Refuse: collision — "${file}" and "${prev}" both become "${slug}"`);
+      process.exit(1);
+    }
+    planned.set(slug, file);
+  }
+
+  const markdownLines: string[] = [];
+
+  for (const [slug, file] of planned) {
     const input = path.join(sourceDir, file);
-    const webpOut = path.join(imagesDir, `${base}.webp`);
-    const thumbOut = path.join(imagesDir, `${base}.thumb.webp`);
+    const webpOut = path.join(imagesDir, `${slug}.webp`);
+    const thumbOut = path.join(imagesDir, `${slug}.thumb.webp`);
 
     await sharp(input)
       .resize({ width: 1600, withoutEnlargement: true })
@@ -70,40 +94,15 @@ async function main(): Promise<void> {
       .webp({ quality: 82 })
       .toFile(thumbOut);
 
-    rows.push({ name: base, webp: webpOut, thumb: thumbOut, status: 'ok' });
+    const alt = slug.replace(/-/g, ' ');
+    const md = `![${alt}](images/${slug}.webp)`;
+    markdownLines.push(md);
+    console.log(`ok  ${file} -> ${slug}.webp / ${slug}.thumb.webp`);
+    console.log(`     paste: ${md}`);
   }
 
-  console.table(
-    rows.map((r) => ({
-      name: r.name,
-      webp: path.basename(r.webp),
-      thumb: path.basename(r.thumb),
-      status: r.status,
-    })),
-  );
-
-  // Warn about catalog image entries whose files are missing.
-  try {
-    const catalog = JSON.parse(
-      await fs.readFile(path.join(root, 'catalog.json'), 'utf8'),
-    ) as { id: string; type: string; file: string }[];
-    for (const entry of catalog) {
-      if (entry.type !== 'image') {
-        continue;
-      }
-      const webp = path.join(imagesDir, `${entry.file}.webp`);
-      const thumb = path.join(imagesDir, `${entry.file}.thumb.webp`);
-      try {
-        await fs.access(webp);
-        await fs.access(thumb);
-      } catch {
-        console.warn(
-          `WARNING: catalog image "${entry.id}" missing files (${entry.file}.webp / .thumb.webp)`,
-        );
-      }
-    }
-  } catch {
-    console.warn('Could not read catalog.json for missing-file warnings');
+  if (markdownLines.length === 0) {
+    console.log('No source images processed.');
   }
 }
 

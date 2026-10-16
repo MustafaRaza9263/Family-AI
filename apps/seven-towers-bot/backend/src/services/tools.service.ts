@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import type { ProjectKnowledge } from './knowledge.service';
+import { closestNames } from '../lib/edit-distance';
 import type { LlmToolDefinition } from '../types/llm';
+import type { ProjectKnowledge } from './knowledge.service';
 
 const showImagesArgsSchema = z.object({
-  ids: z.array(z.string()).min(1).max(6),
+  files: z.array(z.string()).min(1).max(6),
   caption: z.string().max(200).optional(),
 });
 
@@ -39,11 +40,11 @@ export const chatTools: LlmToolDefinition[] = [
     function: {
       name: 'show_images',
       description:
-        'Show one or more catalog images (floor plans, photos) to the user by id.',
+        'Show one or more knowledge-base images (floor plans, photos) by file name as written in the knowledge base (no images/ prefix, no .webp suffix).',
       parameters: {
         type: 'object',
         properties: {
-          ids: {
+          files: {
             type: 'array',
             items: { type: 'string' },
             minItems: 1,
@@ -51,7 +52,7 @@ export const chatTools: LlmToolDefinition[] = [
           },
           caption: { type: 'string', maxLength: 200 },
         },
-        required: ['ids'],
+        required: ['files'],
       },
     },
   },
@@ -60,7 +61,7 @@ export const chatTools: LlmToolDefinition[] = [
     function: {
       name: 'show_table',
       description:
-        'Show one catalog table (payment plan, room breakdown) to the user by id.',
+        'Show one knowledge-base table (payment plan, room breakdown) by its table id from the <!-- table: id --> marker.',
       parameters: {
         type: 'object',
         properties: {
@@ -102,21 +103,21 @@ function executeShowImages(project: ProjectKnowledge, rawArgs: string): ToolExec
     return { attachment: null, toolResultText: 'Invalid show_images arguments.' };
   }
 
+  const validNames = [...project.images.keys()];
   const invalid: string[] = [];
   const items: ImageAttachment['items'] = [];
 
-  for (const id of args.data.ids) {
-    const entry = project.catalog.find((c) => c.id === id);
-    if (!entry || entry.type !== 'image') {
-      invalid.push(id);
+  for (const file of args.data.files) {
+    const image = project.images.get(file);
+    if (!image) {
+      invalid.push(file);
       continue;
     }
-    const url = `/api/assets/${project.projectId}/images/${entry.file}`;
     items.push({
-      id: entry.id,
-      title: entry.title,
-      url,
-      thumbUrl: `${url}?thumb=1`,
+      id: file,
+      title: image.alt,
+      url: image.url,
+      thumbUrl: image.thumbUrl,
     });
   }
 
@@ -125,7 +126,15 @@ function executeShowImages(project: ProjectKnowledge, rawArgs: string): ToolExec
     parts.push(`Shown images: ${items.map((i) => i.id).join(', ')}`);
   }
   if (invalid.length > 0) {
-    parts.push(`Invalid or unknown image ids dropped: ${invalid.join(', ')}`);
+    const suggestions = invalid
+      .map((name) => {
+        const near = closestNames(name, validNames, 3);
+        return near.length > 0
+          ? `"${name}" (closest: ${near.join(', ')})`
+          : `"${name}"`;
+      })
+      .join('; ');
+    parts.push(`Unknown image names dropped: ${suggestions}`);
   }
 
   return {
@@ -150,25 +159,22 @@ function executeShowTable(project: ProjectKnowledge, rawArgs: string): ToolExecu
     return { attachment: null, toolResultText: 'Invalid show_table arguments.' };
   }
 
-  const entry = project.catalog.find((c) => c.id === args.data.id);
-  if (!entry || entry.type !== 'table') {
-    return {
-      attachment: null,
-      toolResultText: `Invalid or unknown table id: ${args.data.id}`,
-    };
-  }
-
-  const table = project.tables.get(entry.id);
+  const table = project.tables.get(args.data.id);
   if (!table) {
+    const near = closestNames(args.data.id, [...project.tables.keys()], 3);
+    const hint =
+      near.length > 0
+        ? ` Closest valid ids: ${near.join(', ')}.`
+        : '';
     return {
       attachment: null,
-      toolResultText: `Table data missing for id: ${entry.id}`,
+      toolResultText: `Unknown table id: ${args.data.id}.${hint}`,
     };
   }
 
   const attachment: TableAttachment = {
     type: 'table',
-    id: entry.id,
+    id: table.id,
     title: table.title,
     columns: table.columns,
     rows: table.rows,
@@ -177,6 +183,6 @@ function executeShowTable(project: ProjectKnowledge, rawArgs: string): ToolExecu
 
   return {
     attachment,
-    toolResultText: `Shown table: ${entry.id}`,
+    toolResultText: `Shown table: ${table.id}`,
   };
 }

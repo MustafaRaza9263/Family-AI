@@ -1,36 +1,66 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { motion } from "motion/react";
+import {
+  Building2,
+  CreditCard,
+  LayoutTemplate,
+  MapPin,
+  type LucideIcon,
+} from "lucide-react";
 import { APP_NAME, APP_TAGLINE, SUGGESTED_PROMPTS } from "@/lib/config";
 import { fadeRise } from "@/lib/motion";
-import { Button } from "@/components/ui/Button";
 
 type EmptyStateProps = {
   onPrompt: (text: string) => void;
+  /** Composer sits between the greeting and the suggestion list (ChatGPT layout). */
+  children?: ReactNode;
 };
 
-export function EmptyState({ onPrompt }: EmptyStateProps) {
+const PROMPT_ICONS: LucideIcon[] = [
+  Building2,
+  LayoutTemplate,
+  CreditCard,
+  MapPin,
+];
+
+export function EmptyState({ onPrompt, children }: EmptyStateProps) {
   return (
     <motion.div
-      className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-12 text-center"
+      className="flex w-full max-w-3xl flex-col items-center gap-6 px-2"
       {...fadeRise}
     >
-      <div className="max-w-md space-y-2">
-        <h2 className="text-2xl font-semibold text-text">{APP_NAME}</h2>
+      <div className="max-w-md space-y-2 px-4 text-center">
+        <h1 className="text-2xl font-semibold text-text sm:text-3xl">
+          {APP_NAME}
+        </h1>
         <p className="text-muted">{APP_TAGLINE}</p>
       </div>
-      <div className="flex max-w-lg flex-wrap justify-center gap-2">
-        {SUGGESTED_PROMPTS.map((prompt) => (
-          <Button
-            key={prompt}
-            variant="secondary"
-            className="rounded-full text-left"
-            onClick={() => onPrompt(prompt)}
-          >
-            {prompt}
-          </Button>
-        ))}
-      </div>
+
+      {children}
+
+      <ul className="flex w-full max-w-3xl flex-col gap-0.5 px-4">
+        {SUGGESTED_PROMPTS.map((prompt, index) => {
+          const Icon = PROMPT_ICONS[index] ?? Building2;
+          return (
+            <li key={prompt}>
+              <button
+                type="button"
+                onClick={() => onPrompt(prompt)}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left text-sm text-text hover:bg-surface-2"
+              >
+                <Icon
+                  className="size-4 shrink-0 text-muted"
+                  aria-hidden
+                  strokeWidth={1.75}
+                />
+                <span>{prompt}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </motion.div>
   );
 }

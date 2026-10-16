@@ -1,0 +1,27 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://vllm:8000/v1
+      - OPENAI_API_KEY=${VLLM_API_KEY}
+      - ENABLE_OLLAMA_API=false
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - WEBUI_NAME=Company AI Playground
+      - SCARF_NO_ANALYTICS=true
+      - DO_NOT_TRACK=true
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - open-webui-data:/app/backend/data
+    networks:
+      - company-ai
+
+volumes:
+  open-webui-data:
+
+networks:
+  company-ai:
+    external: true
