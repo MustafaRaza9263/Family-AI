@@ -34,3 +34,8 @@ services:
       - --tool-call-parser
       - qwen3_coder
       - --enable-prefix-caching
+    networks:
+        - company-ai
+networks:
+  company-ai:
+    external: true
