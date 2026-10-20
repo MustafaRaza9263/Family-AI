@@ -79,7 +79,7 @@ describe.skipIf(!hasTestDb)('admin + assets integration', () => {
     const user = await makeUser('assets@example.com', 'user');
 
     const ok = await user.get(
-      '/api/assets/seven-towers/images/sample-floor-plan',
+      '/api/assets/seven-towers/images/location',
     );
     expect(ok.status).toBe(200);
     expect(ok.headers['content-type']).toMatch(/image\/webp/);

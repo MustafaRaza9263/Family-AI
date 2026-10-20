@@ -16,14 +16,14 @@ describe('tools.service', () => {
     const result = executeTool(
       project,
       'show_images',
-      JSON.stringify({ files: ['sample-floor-plan', 'sampl-floor-plan'] }),
+      JSON.stringify({ files: ['location', 'locatin'] }),
     );
     expect(result.attachment?.type).toBe('images');
     if (result.attachment?.type === 'images') {
       expect(result.attachment.items).toHaveLength(1);
     }
     expect(result.toolResultText).toMatch(/Unknown image names/);
-    expect(result.toolResultText).toMatch(/sample-floor-plan/);
+    expect(result.toolResultText).toMatch(/location/);
   });
 
   it('rejects unknown table id with suggestions', () => {
@@ -75,7 +75,7 @@ describe('prompt.service', () => {
           attachments: [
             {
               type: 'images',
-              items: [{ id: 'sample-floor-plan' }],
+              items: [{ id: 'location' }],
             },
           ],
         },
@@ -83,7 +83,7 @@ describe('prompt.service', () => {
       'thanks',
     );
     const assistant = messages.find((m) => m.role === 'assistant');
-    expect(assistant?.content).toContain('[Shown to the user: image(s) sample-floor-plan]');
+    expect(assistant?.content).toContain('[Shown to the user: image(s) location]');
   });
 });
 

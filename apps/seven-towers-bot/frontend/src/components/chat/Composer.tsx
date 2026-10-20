@@ -140,7 +140,7 @@ export function Composer({
             rows={1}
             value={text}
             disabled={disabled}
-            placeholder="Message Seven Towers Assistant…"
+            placeholder="Message Seven Towers Sales Trainer…"
             style={{
               ...FIELD_STYLE,
               // Push native scrollbar into the clipped gutter.

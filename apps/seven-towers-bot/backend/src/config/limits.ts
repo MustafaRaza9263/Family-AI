@@ -4,7 +4,7 @@
 export const MAX_MESSAGE_CHARS = 1500;
 
 /** Max completion tokens requested from the LLM per answer. */
-export const MAX_ANSWER_TOKENS = 1024;
+export const MAX_ANSWER_TOKENS = 4096;
 
 /** How many prior messages to load into the model context. */
 export const MAX_HISTORY_MESSAGES = 10;

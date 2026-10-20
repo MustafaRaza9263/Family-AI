@@ -8,6 +8,8 @@ const isDev = process.env.NODE_ENV === "development";
  * drop them and rely on Express serving out/ on the same origin.
  */
 const nextConfig: NextConfig = {
+  // Hostname only (no scheme/port). Needed when opening next dev via LAN mDNS.
+  allowedDevOrigins: ["spark-beee.local"],
   ...(isDev
     ? {
         async rewrites() {

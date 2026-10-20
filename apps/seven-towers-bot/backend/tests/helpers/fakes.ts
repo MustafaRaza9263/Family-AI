@@ -9,14 +9,14 @@ export function createFakeKnowledge(
     projectId: 'seven-towers',
     systemMd: 'You are a helpful assistant.',
     knowledgeMd:
-      'Last updated: 2026-01-15\n\n# Doc\n\nDoc body\n\n![Sample floor plan](images/sample-floor-plan.webp)\n',
+      'Last updated: 2026-01-15\n\n# Doc\n\nDoc body\n\n![Location map](images/location.webp)\n',
     lastUpdated: '2026-01-15',
     tables: new Map([
       [
         'sample-payment-plan',
         {
           id: 'sample-payment-plan',
-          title: 'Sample payment plan',
+          title: 'Payment plan',
           columns: [
             { key: '0', label: 'Milestone', align: 'left' as const },
             { key: '1', label: '%', align: 'right' as const },
@@ -27,11 +27,11 @@ export function createFakeKnowledge(
     ]),
     images: new Map([
       [
-        'sample-floor-plan',
+        'location',
         {
-          alt: 'Sample floor plan',
-          url: '/api/assets/seven-towers/images/sample-floor-plan',
-          thumbUrl: '/api/assets/seven-towers/images/sample-floor-plan?thumb=1',
+          alt: 'Location map',
+          url: '/api/assets/seven-towers/images/location',
+          thumbUrl: '/api/assets/seven-towers/images/location?thumb=1',
         },
       ],
     ]),
@@ -86,7 +86,7 @@ export function createToolLlm(): LlmClient {
           index: 0,
           id: 'call_1',
           name: 'show_images',
-          argumentsDelta: '{"files":["sample-floor-plan"]}',
+          argumentsDelta: '{"files":["location"]}',
         };
         yield { type: 'finish', reason: 'tool_calls' };
         return;
