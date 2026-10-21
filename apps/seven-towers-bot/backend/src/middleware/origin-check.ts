@@ -5,6 +5,44 @@ import { AppError, ErrorCodes } from '../lib/errors';
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
+ * Allow same-host, exact Origin match, or same hostname as any allowlisted Origin.
+ * Hostname match covers scheme/port variants (http vs https, default ports).
+ */
+export function isAllowedOrigin(
+  origin: string,
+  requestHost: string,
+  allowedOrigins: readonly string[],
+): boolean {
+  let originUrl: URL;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  if (originUrl.host === requestHost) {
+    return true;
+  }
+
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  const originHostname = originUrl.hostname;
+  for (const allowed of allowedOrigins) {
+    try {
+      if (new URL(allowed).hostname === originHostname) {
+        return true;
+      }
+    } catch {
+      // Skip malformed allowlist entries.
+    }
+  }
+
+  return false;
+}
+
+/**
  * Same-origin guard for mutating requests.
  * No Origin header (curl / server-to-server) is allowed through.
  */
@@ -20,19 +58,12 @@ export function originCheck(req: Request, _res: Response, next: NextFunction): v
     return;
   }
 
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    next(new AppError(403, ErrorCodes.BAD_ORIGIN, 'Invalid Origin'));
-    return;
-  }
-
   const requestHost = req.get('host') ?? '';
-  if (originHost === requestHost || env.ALLOWED_ORIGINS.includes(origin)) {
+  if (isAllowedOrigin(origin, requestHost, env.ALLOWED_ORIGINS)) {
     next();
     return;
   }
 
+  req.log?.warn({ origin, requestHost }, 'Origin not allowed');
   next(new AppError(403, ErrorCodes.BAD_ORIGIN, 'Origin not allowed'));
 }
