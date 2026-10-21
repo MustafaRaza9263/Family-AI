@@ -5,6 +5,8 @@ import type {
   AdminUserListItem,
   AuditEntry,
   Conversation,
+  KnowledgeGapItem,
+  KnowledgeGapStatus,
   Message,
   Role,
   WritableAccountStatus,
@@ -77,4 +79,27 @@ export const adminApi = {
       `/api/admin/audit${qs ? `?${qs}` : ""}`,
     );
   },
+
+  listGaps: (params?: { status?: KnowledgeGapStatus; page?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.page) q.set("page", String(params.page));
+    const qs = q.toString();
+    return apiFetch<{
+      items: KnowledgeGapItem[];
+      total: number;
+      page: number;
+    }>(`/api/admin/gaps${qs ? `?${qs}` : ""}`);
+  },
+
+  updateGap: (id: string, status: KnowledgeGapStatus) =>
+    apiFetch<{
+      id: string;
+      status: KnowledgeGapStatus;
+      resolvedAt: string | null;
+      resolvedBy: string | null;
+    }>(`/api/admin/gaps/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
 };

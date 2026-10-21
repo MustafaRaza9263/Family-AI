@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { closestNames } from '../lib/edit-distance';
 import type { LlmToolDefinition } from '../types/llm';
 import type { ProjectKnowledge } from './knowledge.service';
+import {
+  executeReportGap,
+  reportGapToolDefinition,
+} from './report-gap.tool';
 
 const showImagesArgsSchema = z.object({
   files: z.array(z.string()).min(1).max(6),
@@ -20,6 +24,8 @@ export type Attachment = ImageAttachment;
 export type ToolExecution = {
   attachment: Attachment | null;
   toolResultText: string;
+  /** Validated need from report_gap; omit when not a successful gap report. */
+  gapNeed?: string;
 };
 
 export const chatTools: LlmToolDefinition[] = [
@@ -44,6 +50,7 @@ export const chatTools: LlmToolDefinition[] = [
       },
     },
   },
+  reportGapToolDefinition,
 ];
 
 export function executeTool(
@@ -53,6 +60,9 @@ export function executeTool(
 ): ToolExecution {
   if (name === 'show_images') {
     return executeShowImages(project, rawArgs);
+  }
+  if (name === 'report_gap') {
+    return executeReportGap(rawArgs);
   }
   return {
     attachment: null,

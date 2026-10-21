@@ -1,22 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { RequireAdmin } from "@/components/auth/RequireAdmin";
 import { AdminUsersPanel } from "@/components/admin/AdminUsersPanel";
 import { AdminAuditPanel } from "@/components/admin/AdminAuditPanel";
+import { AdminNav } from "@/components/admin/AdminNav";
 import { toastAdminApiError } from "@/components/admin/adminApiToast";
 import { adminApi } from "@/lib/api-admin";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
-import { cn } from "@/lib/cn";
+import { Spinner } from "@/components/ui/Spinner";
 
 type AdminTab = "users" | "audit";
 
 function AdminHome() {
   const { toast } = useToast();
-  const [tab, setTab] = useState<AdminTab>("users");
+  const searchParams = useSearchParams();
+  const urlTab: AdminTab =
+    searchParams.get("tab") === "audit" ? "audit" : "users";
+  const [tabOverride, setTabOverride] = useState<AdminTab | null>(null);
+  const tab = tabOverride ?? urlTab;
   const [reloadBusy, setReloadBusy] = useState(false);
 
   async function reloadKnowledge() {
@@ -41,34 +47,17 @@ function AdminHome() {
             </Link>
             <h1 className="text-xl font-semibold text-text">Admin</h1>
           </div>
-          <Button variant="secondary" disabled={reloadBusy} onClick={() => void reloadKnowledge()}>
+          <Button
+            variant="secondary"
+            disabled={reloadBusy}
+            onClick={() => void reloadKnowledge()}
+          >
             {reloadBusy ? "Reloading…" : "Reload knowledge"}
           </Button>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
-        <div className="mb-6 flex gap-2 border-b border-border">
-          {(
-            [
-              ["users", "Users"],
-              ["audit", "Audit"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              className={cn(
-                "min-h-[44px] border-b-2 px-4 text-sm font-medium",
-                tab === key
-                  ? "border-accent text-text"
-                  : "border-transparent text-muted hover:text-text",
-              )}
-              onClick={() => setTab(key)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <AdminNav active={tab} onSelect={setTabOverride} />
         {tab === "users" ? <AdminUsersPanel /> : <AdminAuditPanel />}
       </main>
     </div>
@@ -79,7 +68,15 @@ export default function AdminPage() {
   return (
     <RequireAuth>
       <RequireAdmin>
-        <AdminHome />
+        <Suspense
+          fallback={
+            <div className="flex min-h-dvh items-center justify-center bg-bg">
+              <Spinner size="lg" />
+            </div>
+          }
+        >
+          <AdminHome />
+        </Suspense>
       </RequireAdmin>
     </RequireAuth>
   );

@@ -8,6 +8,7 @@ import type { SseWriter } from '../lib/sse';
 import { Conversation } from '../models/conversation.model';
 import { Message } from '../models/message.model';
 import { runChat } from './agent.service';
+import { scheduleKnowledgeGapRecords } from './knowledge-gap.service';
 import type { KnowledgeStore } from './knowledge.service';
 import { buildSystemPrompt, type ChatHistoryMessage } from './prompt.service';
 import type { LlmClient } from '../types/llm';
@@ -166,6 +167,16 @@ export async function handleChat(options: {
       },
       ttftMs: result.ttftMs,
       latencyMs: result.latencyMs,
+    });
+  }
+
+  // Persist gaps after done so save failures never affect the chat response.
+  if (result.reportedGaps.length > 0) {
+    scheduleKnowledgeGapRecords({
+      needs: result.reportedGaps,
+      userId: options.userId,
+      lastQuestion: message,
+      conversationId: conversation._id.toString(),
     });
   }
 }

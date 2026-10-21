@@ -95,9 +95,10 @@ A new *project* for an existing app (for example another property) is just a new
 - **Chat:** `POST /api/chat` streams over SSE with events `meta`, `token`, `attachment`, `done`, `error`.
 - **Knowledge:** two files per project (`system.md` + `knowledge.md`). The full knowledge base goes in the prompt (no RAG). Tables and images are parsed from `knowledge.md` (table markers + GFM tables; markdown image refs). `Last updated: YYYY-MM-DD` is required near the top. Reload validates first; on failure the previous in-memory pack is kept. `npm run knowledge:check` uses the same rules.
 - **Rich results:** images live in `knowledge/<project>/images/` (WebP + thumbs from `source/` via `assets:build`). The model calls `show_images({ files, caption? })` with names as written in the knowledge base (no `images/` prefix or `.webp` suffix). Unknown names are dropped and the tool result suggests the closest valid ones. The backend emits `attachment` events; the UI renders a gallery. Tables, lists and headings are ordinary Markdown in the answer (GFM pipe tables); the UI renders them with `react-markdown` + `remark-gfm`. The model never writes image URLs. Only files in the parsed image map (and their thumbs) are served, and only to logged-in users. Knowledge-base `<!-- table: id -->` markers are still validated when loading packs; there is no `show_table` tool.
+- **Unknown-question registry:** the model may call terminal tool `report_gap({ need })` when a legitimate project/company/buying question is not fully covered by the knowledge base. Shared instructions live in `backend/prompts/gap-reporting.md` and are appended at the end of the system prompt (after the knowledge base) so prefix caching still works. Sole `report_gap` ends the turn without another LLM call; if no text was streamed, the user sees “I don't have that information yet.” Mixed with other tools (e.g. `show_images`), the tool result is `recorded` and the loop continues. Gaps are upserted into `knowledge_gaps` after the SSE `done` event (fire-and-forget; max 20 reports/user/day). Persisted chat history is text only — `report_gap` is never replayed. Admins manage unknowns at `/admin/gaps/` (`GET/PATCH /api/admin/gaps`).
 - **Guards:** message ≤1,500 chars · answer ≤1,024 tokens · last ~10 messages within the context budget · 20 requests/min and 200/day per user · 5 signups/hour per IP · hidden honeypot field on the signup form · max 6 answers in flight (else 503 "busy") · `trust proxy` for real visitor IPs · input injection flags · output fallback message.
-- **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status `pending` | `active` | `disabled`), `sessions`, `conversations`, `messages`, `audit_logs`.
-- **UI:** premium iOS-style (Open WebUI-inspired layout), animated, responsive (phone, tablet, desktop), light/dark/system theme, safe-area aware, respects reduced motion. Tailwind v4 + Motion. System font stack with self-hosted Inter Variable fallback. No external assets; Express CSP enforces `default-src 'self'` (scripts/styles allow `'unsafe-inline'` for Next static hydration; `upgrade-insecure-requests` disabled for plain-HTTP LAN). Optional voice dictation in the composer via the browser Web Speech API (mic next to send; live transcript into the field; never auto-sends). Needs a secure context and often a network connection in Chromium; unsupported browsers hide the mic.
+- **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status `pending` | `active` | `disabled`), `sessions`, `conversations`, `messages`, `audit_logs`, `knowledge_gaps` (unique normalized `key`, `need`, `count`, status `open` | `resolved` | `ignored`, timestamps, last question/conversation, last asker name/email, reopenCount).
+- **UI:** premium iOS-style (Open WebUI-inspired layout), animated, responsive (phone, tablet, desktop), light/dark/system theme, safe-area aware, respects reduced motion. Tailwind v4 + Motion. System font stack with self-hosted Inter Variable fallback. No external assets; Express CSP enforces `default-src 'self'` (scripts/styles allow `'unsafe-inline'` for Next static hydration; `upgrade-insecure-requests` disabled for plain-HTTP LAN). Optional voice dictation in the composer via the browser Web Speech API (mic next to send; live transcript into the field; never auto-sends). Needs a secure context and often a network connection in Chromium; unsupported browsers hide the mic. Admin tabs: Users, Audit, Unknowns (`/admin/gaps/`).
 
 ## 8. Deployment and serving
 
@@ -138,6 +139,7 @@ A new *project* for an existing app (for example another property) is just a new
 | Local MongoDB, not Atlas | Offline support |
 | Static export served by Express | One origin; no proxy buffering of streamed answers |
 | No LangChain; small own agent loop | Understandable code |
+| Unknown-question registry via terminal `report_gap` tool + `knowledge_gaps` collection | Surfaces missing KB facts for content owners without polluting chat history or the SSE stream |
 
 ## 11. Open items
 
@@ -145,7 +147,7 @@ A new *project* for an existing app (for example another property) is just a new
 - Password reset for public users (admin-assisted for now; email or WhatsApp reset when online).
 - Wording of the signup privacy notice (chats are stored and visible to staff).
 - Seven Towers real `system.md` / `knowledge.md` content (images and tables).
-- Golden question set.
+- Golden question set (including known / unknown / partial / off-topic / injection cases for `report_gap`) once an eval runner exists under `evals/`.
 - Domain name for Cloudflare Tunnel.
 - Backup target for MongoDB.
 - Final model choice via evals.

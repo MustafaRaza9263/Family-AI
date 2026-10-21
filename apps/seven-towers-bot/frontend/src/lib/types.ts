@@ -109,3 +109,19 @@ export type AuditEntry = {
   meta?: unknown;
   at: string;
 };
+
+export type KnowledgeGapStatus = "open" | "resolved" | "ignored";
+
+export type KnowledgeGapItem = {
+  id: string;
+  need: string;
+  count: number;
+  status: KnowledgeGapStatus;
+  lastSeenAt: string;
+  lastQuestion: string;
+  lastAskerName: string;
+  lastAskerEmail: string;
+  lastConversationId: string;
+  firstSeenAt: string;
+  reopenCount: number;
+};

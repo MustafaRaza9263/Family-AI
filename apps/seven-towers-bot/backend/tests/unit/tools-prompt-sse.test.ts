@@ -34,14 +34,18 @@ describe('tools.service', () => {
 });
 
 describe('prompt.service', () => {
-  it('builds system.md then KNOWLEDGE BASE then raw knowledge.md', async () => {
+  it('builds system.md, KNOWLEDGE BASE, then gap-reporting instructions', async () => {
     clearPromptCache();
     const project = createFakeKnowledge().getProject('seven-towers');
     const prompt = await buildSystemPrompt(project);
     expect(prompt.startsWith(project.systemMd.trim())).toBe(true);
     const kb = prompt.indexOf('\n\n# KNOWLEDGE BASE\n');
     expect(kb).toBeGreaterThan(-1);
-    expect(prompt.slice(kb + '\n\n# KNOWLEDGE BASE\n'.length)).toBe(project.knowledgeMd);
+    expect(prompt).toContain(project.knowledgeMd);
+    expect(prompt.indexOf(project.knowledgeMd)).toBeLessThan(
+      prompt.indexOf('# Reporting unknown facts'),
+    );
+    expect(prompt).toContain('report_gap');
     expect(prompt).not.toMatch(/\nCATALOG\n/);
     expect(prompt).not.toMatch(/\nTABLES\n/);
   });

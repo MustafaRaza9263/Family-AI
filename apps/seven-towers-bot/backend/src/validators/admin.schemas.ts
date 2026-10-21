@@ -30,3 +30,12 @@ export const adminAuditQuerySchema = z.object({
 export const adminIdParamSchema = z.object({
   id: z.string().regex(/^[a-fA-F0-9]{24}$/, 'Must be a valid ObjectId'),
 });
+
+export const adminGapsQuerySchema = z.object({
+  status: z.enum(['open', 'resolved', 'ignored']).default('open'),
+  page: z.coerce.number().int().min(1).default(1),
+});
+
+export const adminGapStatusBodySchema = z.object({
+  status: z.enum(['open', 'resolved', 'ignored']),
+});

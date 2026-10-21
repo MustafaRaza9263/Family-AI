@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { param } from '../lib/params';
 import * as adminService from '../services/admin.service';
+import * as gapAdmin from '../services/knowledge-gap-admin.service';
 import type { KnowledgeStore } from '../services/knowledge.service';
 
 export function createAdminController(knowledge: KnowledgeStore) {
@@ -83,6 +84,24 @@ export function createAdminController(knowledge: KnowledgeStore) {
       const q = req.query as unknown as { limit: number; before?: string };
       const items = await adminService.listAudit(q);
       res.json({ items });
+    },
+
+    async listGaps(req: Request, res: Response): Promise<void> {
+      const q = req.query as unknown as {
+        status: 'open' | 'resolved' | 'ignored';
+        page: number;
+      };
+      const result = await gapAdmin.listKnowledgeGaps(q);
+      res.json(result);
+    },
+
+    async updateGap(req: Request, res: Response): Promise<void> {
+      const result = await gapAdmin.updateKnowledgeGapStatus(
+        param(req, 'id'),
+        req.body.status,
+        req.user!.id,
+      );
+      res.json(result);
     },
   };
 }

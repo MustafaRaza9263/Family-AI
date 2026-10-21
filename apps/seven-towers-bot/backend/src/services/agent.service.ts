@@ -1,6 +1,7 @@
 import { MAX_ANSWER_TOKENS, MAX_TOOL_ROUNDS } from '../config/limits';
 import type { ProjectKnowledge } from './knowledge.service';
 import { buildMessages, type ChatHistoryMessage } from './prompt.service';
+import { GAP_UNKNOWN_FALLBACK } from './report-gap.tool';
 import { chatTools, executeTool, type Attachment } from './tools.service';
 import type {
   LlmChatMessage,
@@ -20,6 +21,8 @@ export type AgentResult = {
   ttftMs: number | null;
   latencyMs: number;
   guardFlags: string[];
+  /** Validated report_gap needs from this turn (for async persistence). */
+  reportedGaps: string[];
 };
 
 type AccumToolCall = {
@@ -40,6 +43,7 @@ export async function runChat(options: {
   let ttftMs: number | null = null;
   let text = '';
   const attachments: Attachment[] = [];
+  const reportedGaps: string[] = [];
   let promptTokens = 0;
   let completionTokens = 0;
   let finishReason: AgentResult['finishReason'] = 'stop';
@@ -137,11 +141,25 @@ export async function runChat(options: {
           attachments.push(result.attachment);
           options.emit({ type: 'attachment', payload: result.attachment });
         }
+        if (result.gapNeed) {
+          reportedGaps.push(result.gapNeed);
+        }
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
           content: result.toolResultText,
         });
+      }
+
+      // report_gap alone is terminal: do not call the LLM again.
+      const onlyGaps = toolCalls.every((tc) => tc.function.name === 'report_gap');
+      if (onlyGaps) {
+        if (text.trim().length === 0) {
+          text = GAP_UNKNOWN_FALLBACK;
+          options.emit({ type: 'token', text: GAP_UNKNOWN_FALLBACK });
+        }
+        finishReason = 'stop';
+        break;
       }
 
       // Cap: if this was the last allowed tool round, stop without another call.
@@ -168,5 +186,6 @@ export async function runChat(options: {
     ttftMs,
     latencyMs: Date.now() - started,
     guardFlags: [],
+    reportedGaps,
   };
 }

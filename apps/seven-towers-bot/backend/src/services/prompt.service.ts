@@ -1,3 +1,4 @@
+import { loadGapReportingPrompt } from '../lib/gap-reporting-prompt';
 import type { ProjectKnowledge } from './knowledge.service';
 import { buildSystemPromptText } from './knowledge-validate';
 
@@ -21,7 +22,12 @@ export async function buildSystemPrompt(project: ProjectKnowledge): Promise<stri
     return cached;
   }
 
-  const built = buildSystemPromptText(project.systemMd, project.knowledgeMd);
+  const gapReportingMd = await loadGapReportingPrompt();
+  const built = buildSystemPromptText(
+    project.systemMd,
+    project.knowledgeMd,
+    gapReportingMd,
+  );
   promptCache.set(project.projectId, built);
   return built;
 }

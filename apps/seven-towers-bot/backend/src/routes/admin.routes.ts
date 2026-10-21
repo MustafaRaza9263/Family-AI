@@ -6,6 +6,8 @@ import { validate } from '../middleware/validate';
 import type { KnowledgeStore } from '../services/knowledge.service';
 import {
   adminAuditQuerySchema,
+  adminGapStatusBodySchema,
+  adminGapsQuerySchema,
   adminIdParamSchema,
   adminResetPasswordBodySchema,
   adminRoleBodySchema,
@@ -85,6 +87,22 @@ export function createAdminRoutes(knowledge: KnowledgeStore): Router {
     ...gate,
     validate(adminAuditQuerySchema, 'query'),
     admin.listAudit,
+  );
+
+  router.get(
+    '/api/admin/gaps',
+    ...gate,
+    validate(adminGapsQuerySchema, 'query'),
+    admin.listGaps,
+  );
+
+  router.patch(
+    '/api/admin/gaps/:id',
+    ...gate,
+    originCheck,
+    validate(adminIdParamSchema, 'params'),
+    validate(adminGapStatusBodySchema),
+    admin.updateGap,
   );
 
   return router;

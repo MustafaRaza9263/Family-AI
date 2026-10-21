@@ -24,6 +24,9 @@ export const CHAT_PER_MINUTE = 20;
 /** Chat requests allowed per user per day. */
 export const CHAT_PER_DAY = 200;
 
+/** Max knowledge-gap (report_gap) saves per user per UTC day; extras are dropped. */
+export const GAP_REPORTS_PER_DAY = 20;
+
 /** Signups allowed per IP per hour. */
 export const SIGNUPS_PER_HOUR_PER_IP = 5;
 

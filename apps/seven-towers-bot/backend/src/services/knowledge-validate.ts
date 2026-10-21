@@ -6,6 +6,7 @@ import {
   MAX_ANSWER_TOKENS,
 } from '../config/limits';
 import { env } from '../config/env';
+import { loadGapReportingPrompt } from '../lib/gap-reporting-prompt';
 import {
   parseKnowledgeMarkdown,
   type ParsedKnowledge,
@@ -41,8 +42,14 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
 }
 
-export function buildSystemPromptText(systemMd: string, knowledgeMd: string): string {
-  return `${systemMd.trim()}\n\n# KNOWLEDGE BASE\n${knowledgeMd}`;
+export function buildSystemPromptText(
+  systemMd: string,
+  knowledgeMd: string,
+  gapReportingMd = '',
+): string {
+  const base = `${systemMd.trim()}\n\n# KNOWLEDGE BASE\n${knowledgeMd}`;
+  const gap = gapReportingMd.trim();
+  return gap.length > 0 ? `${base}\n\n${gap}` : base;
 }
 
 export function contextRejectTokenLimit(): number {
@@ -91,7 +98,8 @@ export async function validateProjectPack(
   collectImageIssues(parsed, errors, warnings);
   await checkImageFiles(parsed, rootDir, errors);
 
-  const promptText = buildSystemPromptText(systemMd, knowledgeMd);
+  const gapReportingMd = await loadGapReportingPrompt().catch(() => '');
+  const promptText = buildSystemPromptText(systemMd, knowledgeMd, gapReportingMd);
   const tokens = estimateTokens(promptText);
   const rejectAt = contextRejectTokenLimit();
 
