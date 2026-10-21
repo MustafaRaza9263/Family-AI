@@ -17,7 +17,7 @@ export const authApi = {
     password: string;
     website?: string;
   }) =>
-    apiFetch<{ user?: User; ok?: true }>("/api/auth/register", {
+    apiFetch<{ ok: true }>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
     }),

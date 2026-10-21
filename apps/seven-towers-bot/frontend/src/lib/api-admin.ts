@@ -7,6 +7,7 @@ import type {
   Conversation,
   Message,
   Role,
+  WritableAccountStatus,
 } from "./types";
 
 export const adminApi = {
@@ -41,8 +42,8 @@ export const adminApi = {
       `/api/admin/conversations/${id}`,
     ),
 
-  setStatus: (id: string, status: AccountStatus) =>
-    apiFetch<{ id: string; status: AccountStatus }>(
+  setStatus: (id: string, status: WritableAccountStatus) =>
+    apiFetch<{ id: string; status: WritableAccountStatus }>(
       `/api/admin/users/${id}/status`,
       { method: "PATCH", body: JSON.stringify({ status }) },
     ),

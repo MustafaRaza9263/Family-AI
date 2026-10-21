@@ -3,12 +3,13 @@ import { PASSWORD_MAX, PASSWORD_MIN } from '../config/limits';
 
 export const adminUsersQuerySchema = z.object({
   query: z.string().optional().default(''),
-  status: z.enum(['active', 'disabled']).optional(),
+  status: z.enum(['pending', 'active', 'disabled']).optional(),
   role: z.enum(['user', 'admin']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+/** Admins may approve (active) or disable; pending is only set at signup. */
 export const adminStatusBodySchema = z.object({
   status: z.enum(['active', 'disabled']),
 });

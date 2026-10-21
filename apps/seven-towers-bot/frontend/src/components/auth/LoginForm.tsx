@@ -14,6 +14,7 @@ const INLINE_CODES = new Set([
   "INVALID_CREDENTIALS",
   "ACCOUNT_LOCKED",
   "ACCOUNT_DISABLED",
+  "ACCOUNT_PENDING",
 ]);
 
 export function LoginForm() {

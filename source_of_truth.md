@@ -90,13 +90,13 @@ A new *project* for an existing app (for example another property) is just a new
 
 - **Goal:** proof of concept: accurate, fast answers on company data, running locally on the Spark, for the public.
 - **Stack:** Express + TypeScript backend · Next.js static export served by Express (prod: one port, 4000; dev UI on 3000) · MongoDB · vLLM.
-- **Accounts:** open registration. Anyone signs up with email, full name and phone number (all required; phone stored in E.164 format; contact details are unverified). Roles: `user` (everyone who signs up) and `admin`. Admin sees all users and their full chat sessions, and can disable or reset a user. The first admin is created with `npm run seed:admin`, never through signup. Every admin view of a user's chats is written to `audit_logs`. The signup screen tells users that chats are stored and visible to company staff.
+- **Accounts:** open registration with admin approval. Anyone signs up with email, full name and phone number (all required; phone stored in E.164 format; contact details are unverified). New accounts start as `pending` and cannot sign in or use the chatbot until an admin sets status to `active`. Roles: `user` (everyone who signs up) and `admin`. Admin sees all users and their full chat sessions, and can approve, disable, re-enable, or reset a user. The first admin is created with `npm run seed:admin`, never through signup. Every admin view of a user's chats is written to `audit_logs`. The signup screen tells users that chats are stored and visible to company staff.
 - **Sessions and passwords:** server-side sessions in an httpOnly cookie, argon2id hashing, no email dependency (password resets are admin-assisted for now).
 - **Chat:** `POST /api/chat` streams over SSE with events `meta`, `token`, `attachment`, `done`, `error`.
 - **Knowledge:** two files per project (`system.md` + `knowledge.md`). The full knowledge base goes in the prompt (no RAG). Tables and images are parsed from `knowledge.md` (table markers + GFM tables; markdown image refs). `Last updated: YYYY-MM-DD` is required near the top. Reload validates first; on failure the previous in-memory pack is kept. `npm run knowledge:check` uses the same rules.
 - **Rich results:** images live in `knowledge/<project>/images/` (WebP + thumbs from `source/` via `assets:build`). The model calls `show_images({ files, caption? })` with names as written in the knowledge base (no `images/` prefix or `.webp` suffix). Unknown names are dropped and the tool result suggests the closest valid ones. The backend emits `attachment` events; the UI renders a gallery. Tables, lists and headings are ordinary Markdown in the answer (GFM pipe tables); the UI renders them with `react-markdown` + `remark-gfm`. The model never writes image URLs. Only files in the parsed image map (and their thumbs) are served, and only to logged-in users. Knowledge-base `<!-- table: id -->` markers are still validated when loading packs; there is no `show_table` tool.
 - **Guards:** message ≤1,500 chars · answer ≤1,024 tokens · last ~10 messages within the context budget · 20 requests/min and 200/day per user · 5 signups/hour per IP · hidden honeypot field on the signup form · max 6 answers in flight (else 503 "busy") · `trust proxy` for real visitor IPs · input injection flags · output fallback message.
-- **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status), `sessions`, `conversations`, `messages`, `audit_logs`.
+- **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status `pending` | `active` | `disabled`), `sessions`, `conversations`, `messages`, `audit_logs`.
 - **UI:** premium iOS-style (Open WebUI-inspired layout), animated, responsive (phone, tablet, desktop), light/dark/system theme, safe-area aware, respects reduced motion. Tailwind v4 + Motion. System font stack with self-hosted Inter Variable fallback. No external assets; Express CSP enforces `default-src 'self'` (scripts/styles allow `'unsafe-inline'` for Next static hydration; `upgrade-insecure-requests` disabled for plain-HTTP LAN). Optional voice dictation in the composer via the browser Web Speech API (mic next to send; live transcript into the field; never auto-sends). Needs a secure context and often a network connection in Chromium; unsupported browsers hide the mic.
 
 ## 8. Deployment and serving
@@ -133,7 +133,7 @@ A new *project* for an existing app (for example another property) is just a new
 | Own UI, not Open WebUI | Brand control, rich results; Open WebUI's license requires its branding to stay for >50 users. Keep Open WebUI as an internal playground |
 | Rich images via `show_images` over a server-side catalog; tables as GFM markdown in answers | No hallucinated image URLs; chat UIs already render markdown tables well |
 | Two files per project; table markers and image names are parsed from the knowledge base | One editable markdown source; markers keep pack validation strict |
-| Open registration (email, full name, phone required), roles `user` and `admin` | Captures buyer leads; admin sees all users and chats. Contact details are unverified |
+| Open registration with pending approval (email, full name, phone required), roles `user` and `admin` | Captures buyer leads; chatbot access only after admin approval; disable still available. Contact details are unverified |
 | Server sessions + argon2id | Instant revocation, no token in JavaScript |
 | Local MongoDB, not Atlas | Offline support |
 | Static export served by Express | One origin; no proxy buffering of streamed answers |
@@ -141,7 +141,7 @@ A new *project* for an existing app (for example another property) is just a new
 
 ## 11. Open items
 
-- Abuse control for open signup: CAPTCHA services need internet, so start with per-IP limits, honeypot and admin disable; consider WhatsApp/SMS verification later.
+- Abuse control for open signup: CAPTCHA services need internet, so start with per-IP limits, honeypot, pending approval and admin disable; consider WhatsApp/SMS verification later.
 - Password reset for public users (admin-assisted for now; email or WhatsApp reset when online).
 - Wording of the signup privacy notice (chats are stored and visible to staff).
 - Seven Towers real `system.md` / `knowledge.md` content (images and tables).

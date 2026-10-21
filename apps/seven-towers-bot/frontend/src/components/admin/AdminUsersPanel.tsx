@@ -33,6 +33,7 @@ export function AdminUsersPanel() {
             className="min-h-[44px] rounded-md border border-border bg-surface px-4 text-sm text-text"
           >
             <option value="all">All</option>
+            <option value="pending">Pending</option>
             <option value="active">Active</option>
             <option value="disabled">Disabled</option>
           </select>

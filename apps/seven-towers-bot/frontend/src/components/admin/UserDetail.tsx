@@ -34,6 +34,7 @@ export function UserDetail({
   onResetPassword,
 }: UserDetailProps) {
   const isActive = user.status === "active";
+  const isPending = user.status === "pending";
   const isAdmin = user.role === "admin";
 
   return (
@@ -59,6 +60,10 @@ export function UserDetail({
           {isActive ? (
             <Button variant="danger" disabled={statusBusy} onClick={onDisable}>
               Disable account
+            </Button>
+          ) : isPending ? (
+            <Button disabled={statusBusy} onClick={onEnable}>
+              Approve account
             </Button>
           ) : (
             <Button disabled={statusBusy} onClick={onEnable}>

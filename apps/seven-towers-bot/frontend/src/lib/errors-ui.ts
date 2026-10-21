@@ -39,6 +39,8 @@ export function messageForErrorCode(
       return "Account is temporarily locked. Try again later.";
     case "ACCOUNT_DISABLED":
       return "This account has been disabled.";
+    case "ACCOUNT_PENDING":
+      return "Your account is pending admin approval.";
     case "EMAIL_TAKEN":
       return "That email is already registered.";
     case "NETWORK":

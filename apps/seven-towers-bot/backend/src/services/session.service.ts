@@ -68,7 +68,7 @@ export async function createSession(userId: string, req: Request): Promise<strin
 export async function findValidSession(rawToken: string): Promise<{
   sessionId: string;
   user: AuthUser;
-  status: 'active' | 'disabled';
+  status: 'pending' | 'active' | 'disabled';
   lastSeenAt: Date;
   expiresAt: Date;
 } | null> {

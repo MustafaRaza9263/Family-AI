@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
+import { User } from '../../src/models/user.model';
 import {
   createFakeKnowledge,
   createPlainLlm,
@@ -52,12 +53,18 @@ describe.skipIf(!hasTestDb)('chat integration', () => {
 
   async function register(app: ReturnType<typeof createApp>, email: string) {
     const agent = request.agent(app);
-    await agent.post('/api/auth/register').set('X-Forwarded-For', `11.${Math.random()}`).send({
+    const ip = `11.${Math.random()}`;
+    await agent.post('/api/auth/register').set('X-Forwarded-For', ip).send({
       fullName: 'Chat User',
       email,
       phone: '03001112233',
       password: 'password123',
     });
+    await User.updateOne({ email }, { status: 'active' });
+    await agent
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', ip)
+      .send({ email, password: 'password123' });
     return agent;
   }
 

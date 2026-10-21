@@ -59,6 +59,27 @@ describe.skipIf(!hasTestDb)('admin + assets integration', () => {
     expect(ok.body.items.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('admin can approve a pending user', async () => {
+    const admin = await makeUser('approver@example.com', 'admin');
+    const pending = await User.create({
+      email: 'awaiting@example.com',
+      fullName: 'Awaiting',
+      phone: '+923003333333',
+      passwordHash: await hashPassword('password123'),
+      role: 'user',
+      status: 'pending',
+    });
+
+    const res = await admin
+      .patch(`/api/admin/users/${pending._id.toString()}/status`)
+      .send({ status: 'active' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
+
+    const updated = await User.findById(pending._id);
+    expect(updated?.status).toBe('active');
+  });
+
   it('writes audit rows when viewing chats', async () => {
     const admin = await makeUser('admin2@example.com', 'admin');
     const target = await User.create({

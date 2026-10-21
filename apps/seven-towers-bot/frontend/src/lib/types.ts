@@ -1,5 +1,7 @@
 export type Role = "user" | "admin";
-export type AccountStatus = "active" | "disabled";
+export type AccountStatus = "pending" | "active" | "disabled";
+/** Status values an admin may set (pending is signup-only). */
+export type WritableAccountStatus = "active" | "disabled";
 
 export type User = {
   id: string;

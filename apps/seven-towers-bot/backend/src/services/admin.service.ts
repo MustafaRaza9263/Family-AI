@@ -19,7 +19,7 @@ function escapeRegex(value: string): string {
 
 export async function listUsers(options: {
   query: string;
-  status?: 'active' | 'disabled';
+  status?: 'pending' | 'active' | 'disabled';
   role?: 'user' | 'admin';
   page: number;
   limit: number;

@@ -39,11 +39,7 @@ function toPublicUser(user: {
   };
 }
 
-export async function register(
-  body: RegisterBody,
-  req: Request,
-  res: Response,
-): Promise<{ ok: true } | { user: AuthUser }> {
+export async function register(body: RegisterBody): Promise<{ ok: true }> {
   // Honeypot: pretend success without creating an account.
   if (body.website && body.website.trim().length > 0) {
     logger.info({ flag: 'honeypot' }, 'Signup honeypot tripped');
@@ -59,18 +55,17 @@ export async function register(
   }
 
   const passwordHash = await hashPassword(body.password);
-  const user = await User.create({
+  await User.create({
     email: body.email,
     fullName: body.fullName,
     phone,
     passwordHash,
     role: 'user',
-    status: 'active',
+    status: 'pending',
   });
 
-  const rawToken = await createSession(user._id.toString(), req);
-  setSessionCookie(res, req, rawToken);
-  return { user: toPublicUser(user) };
+  // No session until an admin approves (status → active) and the user signs in.
+  return { ok: true };
 }
 
 export async function login(
@@ -107,6 +102,14 @@ export async function login(
     user.failedLoginCount = failures;
     await user.save();
     throw new AppError(401, ErrorCodes.INVALID_CREDENTIALS, 'Invalid email or password');
+  }
+
+  if (user.status === 'pending') {
+    throw new AppError(
+      403,
+      ErrorCodes.ACCOUNT_PENDING,
+      'Account is pending admin approval',
+    );
   }
 
   if (user.status === 'disabled') {

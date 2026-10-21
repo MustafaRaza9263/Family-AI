@@ -7,12 +7,9 @@ import type {
 } from '../validators/auth.schemas';
 
 export async function register(req: Request, res: Response): Promise<void> {
-  const result = await authService.register(req.body as RegisterBody, req, res);
-  if ('ok' in result) {
-    res.status(201).json({ ok: true });
-    return;
-  }
-  res.status(201).json({ user: result.user });
+  await authService.register(req.body as RegisterBody);
+  // Same shape for real signup and honeypot (pending approval; no session).
+  res.status(201).json({ ok: true });
 }
 
 export async function login(req: Request, res: Response): Promise<void> {

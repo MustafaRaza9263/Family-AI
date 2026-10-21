@@ -14,7 +14,7 @@ declare global {
     interface Request {
       user?: AuthUser;
       sessionId?: string;
-      accountStatus?: 'active' | 'disabled';
+      accountStatus?: 'pending' | 'active' | 'disabled';
       id?: string;
     }
   }

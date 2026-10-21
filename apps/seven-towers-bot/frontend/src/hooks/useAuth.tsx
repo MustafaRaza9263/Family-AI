@@ -28,7 +28,7 @@ type AuthContextValue = {
   user: User | null;
   status: AuthStatus;
   login: (email: string, password: string) => Promise<User>;
-  register: (body: RegisterBody) => Promise<User | null>;
+  register: (body: RegisterBody) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -77,18 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (body: RegisterBody) => {
-    const res = await authApi.register(body);
-    if ("ok" in res && res.ok) {
-      setUser(null);
-      setStatus("anon");
-      return null;
-    }
-    if (res.user) {
-      setUser(res.user);
-      setStatus("authed");
-      return res.user;
-    }
-    return null;
+    await authApi.register(body);
+    setUser(null);
+    setStatus("anon");
   }, []);
 
   const logout = useCallback(async () => {

@@ -37,7 +37,30 @@ describe.skipIf(!hasTestDb)('auth integration', () => {
     return `10.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
   }
 
-  it('register -> me -> logout', async () => {
+  async function registerPending(
+    email: string,
+    extras?: { fullName?: string; phone?: string; password?: string },
+  ) {
+    const ip = uniqueIp();
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('X-Forwarded-For', ip)
+      .send({
+        fullName: extras?.fullName ?? 'Test User',
+        email,
+        phone: extras?.phone ?? '03001234567',
+        password: extras?.password ?? 'password123',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ ok: true });
+    return { ip, password: extras?.password ?? 'password123' };
+  }
+
+  async function activate(email: string) {
+    await User.updateOne({ email }, { status: 'active' });
+  }
+
+  it('register creates pending user without a session', async () => {
     const agent = request.agent(app);
     const ip = uniqueIp();
 
@@ -51,11 +74,38 @@ describe.skipIf(!hasTestDb)('auth integration', () => {
         password: 'password123',
       });
     expect(reg.status).toBe(201);
-    expect(reg.body.user.email).toBe('test@example.com');
+    expect(reg.body).toEqual({ ok: true });
+
+    const user = await User.findOne({ email: 'test@example.com' });
+    expect(user?.status).toBe('pending');
+
+    const me = await agent.get('/api/auth/me').set('X-Forwarded-For', ip);
+    expect(me.status).toBe(401);
+  });
+
+  it('pending login is rejected until admin approves', async () => {
+    await registerPending('pending@example.com');
+
+    const blocked = await request(app)
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', uniqueIp())
+      .send({ email: 'pending@example.com', password: 'password123' });
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe('ACCOUNT_PENDING');
+
+    await activate('pending@example.com');
+
+    const agent = request.agent(app);
+    const ip = uniqueIp();
+    const login = await agent
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', ip)
+      .send({ email: 'pending@example.com', password: 'password123' });
+    expect(login.status).toBe(200);
+    expect(login.body.user.email).toBe('pending@example.com');
 
     const me = await agent.get('/api/auth/me').set('X-Forwarded-For', ip);
     expect(me.status).toBe(200);
-    expect(me.body.user.email).toBe('test@example.com');
 
     const logout = await agent.post('/api/auth/logout').set('X-Forwarded-For', ip);
     expect(logout.status).toBe(204);
@@ -65,14 +115,13 @@ describe.skipIf(!hasTestDb)('auth integration', () => {
   });
 
   it('duplicate email returns 409', async () => {
-    const ip = uniqueIp();
     const body = {
       fullName: 'Test User',
       email: 'dupe@example.com',
       phone: '03001234567',
       password: 'password123',
     };
-    await request(app).post('/api/auth/register').set('X-Forwarded-For', ip).send(body);
+    await request(app).post('/api/auth/register').set('X-Forwarded-For', uniqueIp()).send(body);
     const second = await request(app)
       .post('/api/auth/register')
       .set('X-Forwarded-For', uniqueIp())
@@ -98,15 +147,8 @@ describe.skipIf(!hasTestDb)('auth integration', () => {
   });
 
   it('locks after 5 failed logins', async () => {
-    await request(app)
-      .post('/api/auth/register')
-      .set('X-Forwarded-For', uniqueIp())
-      .send({
-        fullName: 'Lock User',
-        email: 'lock@example.com',
-        phone: '03001234568',
-        password: 'password123',
-      });
+    await registerPending('lock@example.com', { phone: '03001234568' });
+    await activate('lock@example.com');
 
     for (let i = 0; i < 5; i++) {
       await request(app)
@@ -124,17 +166,15 @@ describe.skipIf(!hasTestDb)('auth integration', () => {
   });
 
   it('disabled user is rejected on next authenticated request', async () => {
+    await registerPending('disabled@example.com', { phone: '03001234569' });
+    await activate('disabled@example.com');
+
     const agent = request.agent(app);
     const ip = uniqueIp();
     await agent
-      .post('/api/auth/register')
+      .post('/api/auth/login')
       .set('X-Forwarded-For', ip)
-      .send({
-        fullName: 'Dis User',
-        email: 'disabled@example.com',
-        phone: '03001234569',
-        password: 'password123',
-      });
+      .send({ email: 'disabled@example.com', password: 'password123' });
 
     await User.updateOne({ email: 'disabled@example.com' }, { status: 'disabled' });
 
@@ -144,26 +184,27 @@ describe.skipIf(!hasTestDb)('auth integration', () => {
   });
 
   it('change-password revokes other sessions', async () => {
-    const body = {
-      fullName: 'Pwd User',
-      email: 'pwd@example.com',
-      phone: '03001234570',
-      password: 'password123',
-    };
+    const email = 'pwd@example.com';
+    const password = 'password123';
+    await registerPending(email, { phone: '03001234570', password });
+    await activate(email);
 
     const agentA = request.agent(app);
-    await agentA.post('/api/auth/register').set('X-Forwarded-For', uniqueIp()).send(body);
+    await agentA
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', uniqueIp())
+      .send({ email, password });
 
     const agentB = request.agent(app);
     await agentB
       .post('/api/auth/login')
       .set('X-Forwarded-For', uniqueIp())
-      .send({ email: body.email, password: body.password });
+      .send({ email, password });
 
     const change = await agentA
       .post('/api/auth/change-password')
       .set('X-Forwarded-For', uniqueIp())
-      .send({ currentPassword: 'password123', newPassword: 'password456' });
+      .send({ currentPassword: password, newPassword: 'password456' });
     expect(change.status).toBe(204);
 
     const meB = await agentB.get('/api/auth/me').set('X-Forwarded-For', uniqueIp());

@@ -13,7 +13,11 @@ const userSchema = new Schema(
     phone: { type: String, required: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    status: {
+      type: String,
+      enum: ['pending', 'active', 'disabled'],
+      default: 'pending',
+    },
     mustChangePassword: { type: Boolean, default: false },
     failedLoginCount: { type: Number, default: 0 },
     lockedUntil: { type: Date, default: null },

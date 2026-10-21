@@ -1,6 +1,11 @@
 import { cn } from "@/lib/cn";
 
-export type BadgeVariant = "active" | "disabled" | "admin" | "user";
+export type BadgeVariant =
+  | "pending"
+  | "active"
+  | "disabled"
+  | "admin"
+  | "user";
 
 export type BadgeProps = {
   variant: BadgeVariant;
@@ -9,6 +14,7 @@ export type BadgeProps = {
 };
 
 const variantClass: Record<BadgeVariant, string> = {
+  pending: "bg-surface-2 text-accent",
   active: "bg-surface-2 text-success",
   disabled: "bg-surface-2 text-muted",
   admin: "bg-accent text-accent-text",

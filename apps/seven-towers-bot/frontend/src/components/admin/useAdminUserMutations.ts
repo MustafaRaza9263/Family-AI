@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toastAdminApiError } from "@/components/admin/adminApiToast";
 import { adminApi } from "@/lib/api-admin";
-import type { AdminUserDetail } from "@/lib/types";
+import type { AdminUserDetail, WritableAccountStatus } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 
 type ReloadFn = () => Promise<void>;
@@ -15,12 +15,18 @@ export function useAdminUserMutations(user: AdminUserDetail | null, reload: Relo
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
 
-  async function patchStatus(status: "active" | "disabled") {
+  async function patchStatus(status: WritableAccountStatus) {
     if (!user) return;
     setStatusBusy(true);
     try {
       await adminApi.setStatus(user.id, status);
-      toast(status === "active" ? "Account enabled." : "Account disabled.", "success");
+      const message =
+        status === "disabled"
+          ? "Account disabled."
+          : user.status === "pending"
+            ? "Account approved."
+            : "Account enabled.";
+      toast(message, "success");
       await reload();
     } catch (err: unknown) {
       toastAdminApiError(toast, err);

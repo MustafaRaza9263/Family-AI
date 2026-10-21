@@ -49,12 +49,22 @@ export async function requireAuth(
       return;
     }
 
-    if (req.accountStatus === 'disabled') {
+    if (req.accountStatus === 'pending' || req.accountStatus === 'disabled') {
       const rawToken = req.cookies?.[env.COOKIE_NAME];
       if (typeof rawToken === 'string') {
         await deleteSession(rawToken);
       }
       clearSessionCookie(res, req);
+      if (req.accountStatus === 'pending') {
+        next(
+          new AppError(
+            403,
+            ErrorCodes.ACCOUNT_PENDING,
+            'Account is pending admin approval',
+          ),
+        );
+        return;
+      }
       next(new AppError(403, ErrorCodes.ACCOUNT_DISABLED, 'Account is disabled'));
       return;
     }

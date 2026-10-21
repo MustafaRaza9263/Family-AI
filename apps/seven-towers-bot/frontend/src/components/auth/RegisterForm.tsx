@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -16,7 +15,6 @@ import {
 
 export function RegisterForm() {
   const { register } = useAuth();
-  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -27,6 +25,7 @@ export function RegisterForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [fields, setFields] = useState<ApiError["fields"]>();
   const [busy, setBusy] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const fe = (path: string) => fieldErrorMessage(fields, path);
 
   async function onSubmit(e: FormEvent) {
@@ -39,14 +38,14 @@ export function RegisterForm() {
     }
     setBusy(true);
     try {
-      const user = await register({
+      await register({
         fullName: fullName.trim(),
         email: email.trim(),
         phone: phone.trim(),
         password,
         website: website || undefined,
       });
-      router.replace(user ? "/" : "/login/");
+      setSubmitted(true);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "VALIDATION_ERROR") {
@@ -70,6 +69,23 @@ export function RegisterForm() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (submitted) {
+    return (
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-medium text-text">Registration submitted</h2>
+        <p className="text-sm text-muted">
+          Your account is pending admin approval. You can sign in once an
+          administrator activates it.
+        </p>
+        <p className="text-sm text-muted">
+          <Link href="/login/" className="font-medium text-accent">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    );
   }
 
   return (
