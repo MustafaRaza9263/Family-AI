@@ -26,28 +26,10 @@ describe('tools.service', () => {
     expect(result.toolResultText).toMatch(/location/);
   });
 
-  it('rejects unknown table id with suggestions', () => {
-    const result = executeTool(
-      project,
-      'show_table',
-      JSON.stringify({ id: 'sample-payment-pln' }),
-    );
+  it('rejects unknown tools', () => {
+    const result = executeTool(project, 'show_table', JSON.stringify({ id: 'x' }));
     expect(result.attachment).toBeNull();
-    expect(result.toolResultText).toMatch(/Unknown table id/);
-    expect(result.toolResultText).toMatch(/sample-payment-plan/);
-  });
-
-  it('shows table by id', () => {
-    const result = executeTool(
-      project,
-      'show_table',
-      JSON.stringify({ id: 'sample-payment-plan' }),
-    );
-    expect(result.attachment?.type).toBe('table');
-    if (result.attachment?.type === 'table') {
-      expect(result.attachment.id).toBe('sample-payment-plan');
-      expect(result.attachment.columns[0]?.key).toBe('0');
-    }
+    expect(result.toolResultText).toMatch(/Unknown tool/);
   });
 });
 

@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-10-16
+> Last updated: 2026-10-21
 
 ## 1. What this is
 
@@ -94,7 +94,7 @@ A new *project* for an existing app (for example another property) is just a new
 - **Sessions and passwords:** server-side sessions in an httpOnly cookie, argon2id hashing, no email dependency (password resets are admin-assisted for now).
 - **Chat:** `POST /api/chat` streams over SSE with events `meta`, `token`, `attachment`, `done`, `error`.
 - **Knowledge:** two files per project (`system.md` + `knowledge.md`). The full knowledge base goes in the prompt (no RAG). Tables and images are parsed from `knowledge.md` (table markers + GFM tables; markdown image refs). `Last updated: YYYY-MM-DD` is required near the top. Reload validates first; on failure the previous in-memory pack is kept. `npm run knowledge:check` uses the same rules.
-- **Rich results (general tools):** images live in `knowledge/<project>/images/` (WebP + thumbs from `source/` via `assets:build`). The model calls `show_images({ files, caption? })` with names as written in the knowledge base (no `images/` prefix or `.webp` suffix) and `show_table({ id })` with a `<!-- table: id -->` marker. Unknown names/ids are dropped and the tool result suggests the closest valid ones. The backend emits `attachment` events; the UI renders a gallery and table. The model never writes image URLs or numbers. Only files in the parsed image map (and their thumbs) are served, and only to logged-in users.
+- **Rich results:** images live in `knowledge/<project>/images/` (WebP + thumbs from `source/` via `assets:build`). The model calls `show_images({ files, caption? })` with names as written in the knowledge base (no `images/` prefix or `.webp` suffix). Unknown names are dropped and the tool result suggests the closest valid ones. The backend emits `attachment` events; the UI renders a gallery. Tables, lists and headings are ordinary Markdown in the answer (GFM pipe tables); the UI renders them with `react-markdown` + `remark-gfm`. The model never writes image URLs. Only files in the parsed image map (and their thumbs) are served, and only to logged-in users. Knowledge-base `<!-- table: id -->` markers are still validated when loading packs; there is no `show_table` tool.
 - **Guards:** message ≤1,500 chars · answer ≤1,024 tokens · last ~10 messages within the context budget · 20 requests/min and 200/day per user · 5 signups/hour per IP · hidden honeypot field on the signup form · max 6 answers in flight (else 503 "busy") · `trust proxy` for real visitor IPs · input injection flags · output fallback message.
 - **MongoDB collections:** `users` (email, fullName, phone, passwordHash, role `user` or `admin`, status), `sessions`, `conversations`, `messages`, `audit_logs`.
 - **UI:** premium iOS-style (Open WebUI-inspired layout), animated, responsive (phone, tablet, desktop), light/dark/system theme, safe-area aware, respects reduced motion. Tailwind v4 + Motion. System font stack with self-hosted Inter Variable fallback. No external assets; Express CSP enforces `default-src 'self'` (scripts/styles allow `'unsafe-inline'` for Next static hydration; `upgrade-insecure-requests` disabled for plain-HTTP LAN).
@@ -131,8 +131,8 @@ A new *project* for an existing app (for example another property) is just a new
 | Document in the prompt, no RAG (≤10 pages) | Simpler; prefix caching keeps it fast |
 | Thinking off by default | Latency; enable only where evals show a gain |
 | Own UI, not Open WebUI | Brand control, rich results; Open WebUI's license requires its branding to stay for >50 users. Keep Open WebUI as an internal playground |
-| Rich results via two general tools (`show_images`, `show_table`) over a server-side catalog | No hallucinated URLs or numbers; reusable across apps |
-| Two files per project; table ids and image names are parsed from the knowledge base | One editable markdown source; no separate catalog/prices/table JSON to keep in sync |
+| Rich images via `show_images` over a server-side catalog; tables as GFM markdown in answers | No hallucinated image URLs; chat UIs already render markdown tables well |
+| Two files per project; table markers and image names are parsed from the knowledge base | One editable markdown source; markers keep pack validation strict |
 | Open registration (email, full name, phone required), roles `user` and `admin` | Captures buyer leads; admin sees all users and chats. Contact details are unverified |
 | Server sessions + argon2id | Instant revocation, no token in JavaScript |
 | Local MongoDB, not Atlas | Offline support |

@@ -53,8 +53,8 @@ describe('agent.service', () => {
           type: 'tool_call_delta',
           index: 0,
           id: `call_${calls}`,
-          name: 'show_table',
-          argumentsDelta: '{"id":"sample-payment-plan"}',
+          name: 'show_images',
+          argumentsDelta: '{"files":["location"]}',
         };
         yield { type: 'finish', reason: 'tool_calls' };
       },

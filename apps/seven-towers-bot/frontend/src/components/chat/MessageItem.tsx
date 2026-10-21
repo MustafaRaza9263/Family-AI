@@ -1,13 +1,15 @@
 "use client";
 
-import { Copy } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
 import { copyText } from "@/lib/errors-ui";
 import type { Attachment, Message } from "@/lib/types";
 import { Attachments } from "@/components/rich/Attachments";
 import { Markdown } from "./Markdown";
 import { MessageError } from "./MessageError";
 import { TypingIndicator } from "./TypingIndicator";
+
+const COPIED_MS = 1500;
 
 type MessageItemProps = {
   message: Message;
@@ -21,6 +23,17 @@ export function MessageItem({
   renderAttachments,
 }: MessageItemProps) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current !== null) {
+        window.clearTimeout(copiedTimer.current);
+      }
+    };
+  }, []);
+
   const attachmentSlot =
     message.attachments.length > 0
       ? (renderAttachments?.(message.attachments) ?? (
@@ -44,6 +57,22 @@ export function MessageItem({
     message.streaming && !message.content && !message.errorCode;
   const showCopy =
     Boolean(message.content) && !message.streaming && !message.errorCode;
+
+  const onCopy = (): void => {
+    void copyText(message.content).then((ok) => {
+      if (!ok) return;
+      if (copiedTimer.current !== null) {
+        window.clearTimeout(copiedTimer.current);
+      }
+      setCopied(true);
+      copiedTimer.current = window.setTimeout(() => {
+        setCopied(false);
+        copiedTimer.current = null;
+      }, COPIED_MS);
+    });
+  };
+
+  const tooltip = copied ? "Copied" : "Copy response";
 
   return (
     <article className="w-full text-sm">
@@ -70,16 +99,30 @@ export function MessageItem({
       )}
       {attachmentSlot}
       {showCopy ? (
-        <div className="mt-2 flex items-center">
+        <div className="group relative mt-2 inline-flex items-center">
           <button
             type="button"
-            aria-label="Copy reply"
-            title="Copy"
-            onClick={() => void copyText(message.content)}
+            aria-label={tooltip}
+            onClick={onCopy}
             className="inline-flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
           >
-            <Copy className="size-3.5" strokeWidth={1.75} />
+            {copied ? (
+              <Check className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Copy className="size-3.5" strokeWidth={1.75} />
+            )}
           </button>
+          <span
+            role="tooltip"
+            className={
+              "pointer-events-none absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 " +
+              "whitespace-nowrap rounded-full bg-surface-2 px-2.5 py-1 text-xs text-text " +
+              "opacity-0 transition-opacity group-hover:opacity-100 " +
+              (copied ? "opacity-100" : "")
+            }
+          >
+            {tooltip}
+          </span>
         </div>
       ) : null}
     </article>

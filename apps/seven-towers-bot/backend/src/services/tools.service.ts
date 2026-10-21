@@ -8,26 +8,14 @@ const showImagesArgsSchema = z.object({
   caption: z.string().max(200).optional(),
 });
 
-const showTableArgsSchema = z.object({
-  id: z.string().min(1),
-});
-
 export type ImageAttachment = {
   type: 'images';
   caption?: string;
   items: { id: string; title: string; url: string; thumbUrl: string }[];
 };
 
-export type TableAttachment = {
-  type: 'table';
-  id: string;
-  title: string;
-  columns: { key: string; label: string; align?: string }[];
-  rows: Record<string, unknown>[];
-  notes?: string;
-};
-
-export type Attachment = ImageAttachment | TableAttachment;
+/** Attachments the UI can render. Tables are markdown in the answer, not tools. */
+export type Attachment = ImageAttachment;
 
 export type ToolExecution = {
   attachment: Attachment | null;
@@ -56,21 +44,6 @@ export const chatTools: LlmToolDefinition[] = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'show_table',
-      description:
-        'Show one knowledge-base table (payment plan, room breakdown) by its table id from the <!-- table: id --> marker.',
-      parameters: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-        },
-        required: ['id'],
-      },
-    },
-  },
 ];
 
 export function executeTool(
@@ -80,9 +53,6 @@ export function executeTool(
 ): ToolExecution {
   if (name === 'show_images') {
     return executeShowImages(project, rawArgs);
-  }
-  if (name === 'show_table') {
-    return executeShowTable(project, rawArgs);
   }
   return {
     attachment: null,
@@ -143,46 +113,5 @@ function executeShowImages(project: ProjectKnowledge, rawArgs: string): ToolExec
         ? { type: 'images', caption: args.data.caption, items }
         : null,
     toolResultText: parts.join('. ') || 'No images shown.',
-  };
-}
-
-function executeShowTable(project: ProjectKnowledge, rawArgs: string): ToolExecution {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawArgs);
-  } catch {
-    return { attachment: null, toolResultText: 'Invalid JSON arguments for show_table.' };
-  }
-
-  const args = showTableArgsSchema.safeParse(parsed);
-  if (!args.success) {
-    return { attachment: null, toolResultText: 'Invalid show_table arguments.' };
-  }
-
-  const table = project.tables.get(args.data.id);
-  if (!table) {
-    const near = closestNames(args.data.id, [...project.tables.keys()], 3);
-    const hint =
-      near.length > 0
-        ? ` Closest valid ids: ${near.join(', ')}.`
-        : '';
-    return {
-      attachment: null,
-      toolResultText: `Unknown table id: ${args.data.id}.${hint}`,
-    };
-  }
-
-  const attachment: TableAttachment = {
-    type: 'table',
-    id: table.id,
-    title: table.title,
-    columns: table.columns,
-    rows: table.rows,
-    notes: table.notes,
-  };
-
-  return {
-    attachment,
-    toolResultText: `Shown table: ${table.id}`,
   };
 }

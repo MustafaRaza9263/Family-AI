@@ -32,18 +32,8 @@ export type ImageAttachment = {
   items: ImageAttachmentItem[];
 };
 
-export type TableColumn = { key: string; label: string; align?: string };
-
-export type TableAttachment = {
-  type: "table";
-  id: string;
-  title: string;
-  columns: TableColumn[];
-  rows: Record<string, unknown>[];
-  notes?: string;
-};
-
-export type Attachment = ImageAttachment | TableAttachment;
+/** Tables are GFM markdown in the message body, not separate attachments. */
+export type Attachment = ImageAttachment;
 
 export type Message = {
   id: string;

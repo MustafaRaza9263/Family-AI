@@ -32,31 +32,21 @@ export function clearPromptCache(): void {
 
 function attachmentMarker(attachments: unknown[]): string {
   const images: string[] = [];
-  const tables: string[] = [];
   for (const raw of attachments) {
     if (!raw || typeof raw !== 'object') {
       continue;
     }
-    const att = raw as { type?: string; id?: string; items?: { id: string }[] };
+    const att = raw as { type?: string; items?: { id: string }[] };
     if (att.type === 'images' && Array.isArray(att.items)) {
       for (const item of att.items) {
         images.push(item.id);
       }
-    } else if (att.type === 'table' && typeof att.id === 'string') {
-      tables.push(att.id);
     }
   }
-  const bits: string[] = [];
-  if (images.length > 0) {
-    bits.push(`image(s) ${images.join(', ')}`);
-  }
-  if (tables.length > 0) {
-    bits.push(`table ${tables.join(', ')}`);
-  }
-  if (bits.length === 0) {
+  if (images.length === 0) {
     return '';
   }
-  return `\n[Shown to the user: ${bits.join('; ')}]`;
+  return `\n[Shown to the user: image(s) ${images.join(', ')}]`;
 }
 
 export async function buildMessages(
