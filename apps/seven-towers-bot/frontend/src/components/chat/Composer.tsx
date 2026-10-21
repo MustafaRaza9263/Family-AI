@@ -8,9 +8,13 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Mic, Square, X } from "lucide-react";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useToast } from "@/components/ui/Toast";
+import { VoiceWaveform } from "@/components/chat/VoiceWaveform";
 import { MAX_MESSAGE_CHARS } from "@/lib/config";
 import { isOverMessageLimit, shouldShowCharCounter } from "@/lib/format";
+import { clampTranscript, joinTranscript } from "@/lib/speech-to-text";
 import { cn } from "@/lib/cn";
 
 type ComposerProps = {
@@ -24,6 +28,8 @@ type ComposerProps = {
 const LINE_HEIGHT_PX = 24;
 const MAX_LINES = 6;
 const MAX_HEIGHT_PX = LINE_HEIGHT_PX * MAX_LINES;
+/** Matches size-9 controls — keeps dictation/writing height stable. */
+const FIELD_ROW_PX = 36;
 
 /** Inline so Tailwind preflight (resize: vertical) cannot win. */
 const FIELD_STYLE: CSSProperties = {
@@ -35,7 +41,6 @@ const FIELD_STYLE: CSSProperties = {
   boxShadow: "none",
   background: "transparent",
   overflowX: "hidden",
-  // Hide scrollbar in Firefox / legacy Edge; WebKit clipped by wrapper below.
   scrollbarWidth: "none",
   msOverflowStyle: "none",
 };
@@ -54,6 +59,34 @@ export function Composer({
   const [fadeTop, setFadeTop] = useState(false);
   const [fadeBottom, setFadeBottom] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const [voiceSnapshot, setVoiceSnapshot] = useState("");
+  const wasListeningRef = useRef(false);
+  const { toast } = useToast();
+
+  const onVoiceError = useCallback(
+    (message: string): void => {
+      toast(message, "danger");
+    },
+    [toast],
+  );
+
+  const speech = useSpeechToText({
+    onError: onVoiceError,
+  });
+
+  const listening = speech.status === "listening";
+
+  // Commit transcript into the field only when leaving dictation (not cancel).
+  useEffect(() => {
+    if (wasListeningRef.current && !listening) {
+      const committed = clampTranscript(
+        joinTranscript(voiceSnapshot, speech.parts.finals, ""),
+        MAX_MESSAGE_CHARS,
+      );
+      setText(committed);
+    }
+    wasListeningRef.current = listening;
+  }, [listening, speech.parts.finals, voiceSnapshot]);
 
   const updateFades = useCallback((): void => {
     const el = areaRef.current;
@@ -77,9 +110,9 @@ export function Composer({
   }, []);
 
   useEffect(() => {
+    if (listening) return;
     const el = areaRef.current;
     if (!el) return;
-    // Measure unconstrained height first, then cap.
     el.style.height = "auto";
     el.style.overflowY = "hidden";
     const contentHeight = el.scrollHeight;
@@ -88,19 +121,55 @@ export function Composer({
     el.style.overflowY = isCapped ? "scroll" : "hidden";
     setCapped(isCapped);
     updateFades();
-  }, [text, updateFades]);
+  }, [text, listening, updateFades]);
 
-  const trimmed = text.trim();
-  const overLimit = isOverMessageLimit(text.length, MAX_MESSAGE_CHARS);
-  const showCounter = shouldShowCharCounter(text.length, MAX_MESSAGE_CHARS);
+  const voiceDraft = joinTranscript(
+    voiceSnapshot,
+    speech.parts.finals,
+    speech.parts.interim,
+  );
+  const draftForSend = listening ? voiceDraft : text;
+  const trimmed = draftForSend.trim();
+  const overLimit = isOverMessageLimit(draftForSend.length, MAX_MESSAGE_CHARS);
+  const showCounter =
+    !listening && shouldShowCharCounter(text.length, MAX_MESSAGE_CHARS);
   const canSend = Boolean(trimmed) && !overLimit && !disabled && !streaming;
-  const multiLine = text.includes("\n") || text.length > 48;
+  const multiLine =
+    !listening && (text.includes("\n") || text.length > 48);
+  const canUseMic = speech.supported && !disabled && !streaming;
+
+  const stopSpeech = speech.stop;
 
   const submit = useCallback(() => {
     if (!canSend) return;
-    onSend(trimmed);
+    const toSend = trimmed;
+    if (listening) {
+      // Skip the post-listen commit effect — we're sending immediately.
+      wasListeningRef.current = false;
+      setVoiceSnapshot("");
+      stopSpeech();
+    }
+    onSend(toSend);
     setText("");
-  }, [canSend, onSend, trimmed]);
+    setVoiceSnapshot("");
+  }, [canSend, listening, onSend, stopSpeech, trimmed]);
+
+  const startVoice = (): void => {
+    if (!canUseMic) return;
+    setVoiceSnapshot(text);
+    speech.start();
+  };
+
+  const stopVoice = (): void => {
+    speech.stop();
+  };
+
+  const cancelVoice = (): void => {
+    const keep = voiceSnapshot;
+    wasListeningRef.current = false;
+    speech.cancel();
+    setText(keep);
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (composing || event.key !== "Enter") return;
@@ -114,50 +183,80 @@ export function Composer({
       className={cn(
         "mx-auto w-full max-w-3xl",
         placement === "bottom"
-          ? // Overlay the transcript so messages scroll under the field.
-            "pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2"
+          ? "pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2"
           : "px-4 py-0",
       )}
     >
       <div
         className={cn(
           "composer-shell pointer-events-auto flex items-center gap-2 px-3 py-1.5",
+          "transition-[border-radius] duration-200 ease-out",
           multiLine ? "rounded-[22px]" : "rounded-[30px]",
         )}
       >
-        {/* overflow:hidden clips WebKit scrollbar + resize grip outside the pill */}
         <div
           className={cn(
-            "min-w-0 flex-1 overflow-hidden",
-            fadeTop && fadeBottom && "composer-fade",
-            fadeTop && !fadeBottom && "composer-fade-top",
-            !fadeTop && fadeBottom && "composer-fade-bottom",
+            "flex shrink-0 items-center justify-center overflow-hidden transition-[width,opacity] duration-200 ease-out",
+            listening ? "w-9 opacity-100" : "w-0 opacity-0",
           )}
         >
-          <textarea
-            ref={areaRef}
-            dir="auto"
-            rows={1}
-            value={text}
-            disabled={disabled}
-            placeholder="Message Seven Towers Sales Trainer…"
-            style={{
-              ...FIELD_STYLE,
-              // Push native scrollbar into the clipped gutter.
-              width: capped ? "calc(100% + 48px)" : "100%",
-              paddingRight: capped ? 48 : 0,
-              maxHeight: MAX_HEIGHT_PX,
-              overflowY: capped ? "scroll" : "hidden",
-            }}
-            className="composer-input min-h-6 py-2 text-sm leading-6 text-text placeholder:text-muted"
-            onChange={(e) => setText(e.target.value)}
-            onScroll={updateFades}
-            onKeyDown={onKeyDown}
-            onCompositionStart={() => setComposing(true)}
-            onCompositionEnd={() => setComposing(false)}
-          />
+          <button
+            type="button"
+            aria-label="Cancel voice input"
+            tabIndex={listening ? 0 : -1}
+            onClick={cancelVoice}
+            className="inline-flex size-9 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <X className="size-4" strokeWidth={1.75} />
+          </button>
         </div>
-        <div className="flex h-9 shrink-0 items-center gap-2">
+
+        <div
+          className={cn(
+            "relative min-w-0 flex-1 overflow-hidden transition-[height] duration-200 ease-out",
+            fadeTop && fadeBottom && !listening && "composer-fade",
+            fadeTop && !fadeBottom && !listening && "composer-fade-top",
+            !fadeTop && fadeBottom && !listening && "composer-fade-bottom",
+          )}
+          style={{
+            height: listening ? FIELD_ROW_PX : undefined,
+            minHeight: FIELD_ROW_PX,
+          }}
+        >
+          {listening ? (
+            <div
+              className="flex h-9 items-center"
+              aria-live="polite"
+              aria-label="Listening"
+            >
+              <VoiceWaveform stream={speech.mediaStream} />
+            </div>
+          ) : (
+            <textarea
+              ref={areaRef}
+              dir="auto"
+              rows={1}
+              value={text}
+              disabled={disabled}
+              placeholder="Message Seven Towers Sales Trainer…"
+              style={{
+                ...FIELD_STYLE,
+                width: capped ? "calc(100% + 48px)" : "100%",
+                paddingRight: capped ? 48 : 0,
+                maxHeight: MAX_HEIGHT_PX,
+                overflowY: capped ? "scroll" : "hidden",
+              }}
+              className="composer-input min-h-6 py-2 text-sm leading-6 text-text placeholder:text-muted"
+              onChange={(e) => setText(e.target.value)}
+              onScroll={updateFades}
+              onKeyDown={onKeyDown}
+              onCompositionStart={() => setComposing(true)}
+              onCompositionEnd={() => setComposing(false)}
+            />
+          )}
+        </div>
+
+        <div className="flex h-9 shrink-0 items-center gap-1.5">
           {showCounter ? (
             <span
               className={cn(
@@ -168,6 +267,38 @@ export function Composer({
               {text.length}/{MAX_MESSAGE_CHARS}
             </span>
           ) : null}
+
+          {speech.supported ? (
+            listening ? (
+              <button
+                type="button"
+                aria-label="Stop listening"
+                onClick={stopVoice}
+                className="inline-flex size-9 items-center justify-center rounded-full border border-border text-text hover:bg-surface-2"
+              >
+                <Square className="size-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="Start voice input"
+                title={
+                  canUseMic
+                    ? "Voice input"
+                    : "Voice input unavailable while generating"
+                }
+                disabled={!canUseMic}
+                onClick={startVoice}
+                className={cn(
+                  "inline-flex size-9 items-center justify-center rounded-full text-muted",
+                  "hover:bg-surface-2 hover:text-text disabled:opacity-40",
+                )}
+              >
+                <Mic className="size-4" strokeWidth={1.75} />
+              </button>
+            )
+          ) : null}
+
           {streaming ? (
             <button
               type="button"
