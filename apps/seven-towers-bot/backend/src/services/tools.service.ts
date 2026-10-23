@@ -34,7 +34,7 @@ export const chatTools: LlmToolDefinition[] = [
     function: {
       name: 'show_images',
       description:
-        'Show one or more knowledge-base images (floor plans, photos) by file name as written in the knowledge base (no images/ prefix, no .webp suffix).',
+        'Required to display images in the chat UI. Show one or more knowledge-base images (floor plans, photos) by file name as written in the knowledge base (no images/ prefix, no .webp suffix). Call this whenever the user asks for or accepts a floor plan or location image; prose alone does not show images.',
       parameters: {
         type: 'object',
         properties: {

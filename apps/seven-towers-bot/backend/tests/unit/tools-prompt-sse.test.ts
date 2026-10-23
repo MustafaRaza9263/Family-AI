@@ -69,7 +69,33 @@ describe('prompt.service', () => {
       'thanks',
     );
     const assistant = messages.find((m) => m.role === 'assistant');
-    expect(assistant?.content).toContain('[Shown to the user: image(s) location]');
+    expect(assistant?.content).toContain('<images_shown>location</images_shown>');
+    expect(assistant?.content).not.toContain('[Shown to the user:');
+  });
+
+  it('strips echoed markers from stored assistant content before building', async () => {
+    const project = createFakeKnowledge().getProject('seven-towers');
+    const messages = await buildMessages(
+      project,
+      [
+        {
+          role: 'assistant',
+          content:
+            'Here is the plan.\n[Shown to the user: image(s) harmony-type-b]',
+          attachments: [
+            {
+              type: 'images',
+              items: [{ id: 'harmony-type-b' }],
+            },
+          ],
+        },
+      ],
+      'thanks',
+    );
+    const assistant = messages.find((m) => m.role === 'assistant');
+    expect(assistant?.content).toBe(
+      'Here is the plan.\n<images_shown>harmony-type-b</images_shown>',
+    );
   });
 });
 

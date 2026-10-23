@@ -1,4 +1,8 @@
 import { MAX_ANSWER_TOKENS, MAX_TOOL_ROUNDS } from '../config/limits';
+import {
+  claimsFloorPlanShown,
+  userWantsFloorPlanImages,
+} from '../guardrails/image-intent';
 import type { ProjectKnowledge } from './knowledge.service';
 import { buildMessages, type ChatHistoryMessage } from './prompt.service';
 import { GAP_UNKNOWN_FALLBACK } from './report-gap.tool';
@@ -7,6 +11,7 @@ import type {
   LlmChatMessage,
   LlmClient,
   LlmToolCall,
+  LlmToolChoice,
 } from '../types/llm';
 
 export type AgentEmit =
@@ -31,6 +36,14 @@ type AccumToolCall = {
   arguments: string;
 };
 
+const FORCE_SHOW_IMAGES: LlmToolChoice = {
+  type: 'function',
+  function: { name: 'show_images' },
+};
+
+const IMAGE_NUDGE =
+  'No images were shown to the user. Call show_images now with the correct knowledge-base file names for the units you described. Do not only describe them.';
+
 export async function runChat(options: {
   llm: LlmClient;
   project: ProjectKnowledge;
@@ -47,6 +60,7 @@ export async function runChat(options: {
   let promptTokens = 0;
   let completionTokens = 0;
   let finishReason: AgentResult['finishReason'] = 'stop';
+  const guardFlags: string[] = [];
 
   const seed = await buildMessages(
     options.project,
@@ -57,6 +71,13 @@ export async function runChat(options: {
     role: m.role,
     content: m.content,
   }));
+
+  // Force show_images when the user clearly wants floor plans / maps.
+  let forceShowImages = userWantsFloorPlanImages(
+    options.userMessage,
+    options.history,
+  );
+  let imageNudgeUsed = false;
 
   const maxRounds = MAX_TOOL_ROUNDS + 1;
 
@@ -76,6 +97,7 @@ export async function runChat(options: {
         tools: chatTools,
         maxTokens: MAX_ANSWER_TOKENS,
         signal: options.signal,
+        toolChoice: forceShowImages ? FORCE_SHOW_IMAGES : undefined,
       })) {
         if (chunk.type === 'token') {
           if (ttftMs === null) {
@@ -117,6 +139,9 @@ export async function runChat(options: {
     }
 
     if (pending.size > 0) {
+      // After a forced tool call, let the follow-up round answer freely.
+      forceShowImages = false;
+
       const toolCalls: LlmToolCall[] = [...pending.entries()]
         .sort(([a], [b]) => a - b)
         .map(([, tc]) => ({
@@ -170,6 +195,25 @@ export async function runChat(options: {
       continue;
     }
 
+    // Text-only reply but images were expected or claimed — nudge once.
+    if (
+      attachments.length === 0 &&
+      !imageNudgeUsed &&
+      round < MAX_TOOL_ROUNDS &&
+      (userWantsFloorPlanImages(options.userMessage, options.history) ||
+        claimsFloorPlanShown(text))
+    ) {
+      imageNudgeUsed = true;
+      forceShowImages = true;
+      guardFlags.push('image_tool_nudge');
+      messages.push({
+        role: 'assistant',
+        content: roundText.length > 0 ? roundText : null,
+      });
+      messages.push({ role: 'user', content: IMAGE_NUDGE });
+      continue;
+    }
+
     if (roundFinish === 'length') {
       finishReason = 'length';
     } else {
@@ -185,7 +229,7 @@ export async function runChat(options: {
     finishReason,
     ttftMs,
     latencyMs: Date.now() - started,
-    guardFlags: [],
+    guardFlags,
     reportedGaps,
   };
 }

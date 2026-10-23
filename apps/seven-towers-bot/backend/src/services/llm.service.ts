@@ -40,6 +40,10 @@ export function createLlmClient(): LlmClient {
           max_tokens: params.maxTokens,
           chat_template_kwargs: { enable_thinking: false },
         };
+        if (params.toolChoice) {
+          request.tool_choice =
+            params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption;
+        }
         stream = await client.chat.completions.create(request, { signal });
       } catch (err) {
         if (signal.aborted) {

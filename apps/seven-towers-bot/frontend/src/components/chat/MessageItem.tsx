@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
+import { stripAttachmentMarkers } from "@/lib/attachment-markers";
 import { copyText } from "@/lib/errors-ui";
 import type { Attachment, Message } from "@/lib/types";
 import { Attachments } from "@/components/rich/Attachments";
@@ -53,13 +54,15 @@ export function MessageItem({
     );
   }
 
+  // Hide markers the model sometimes echoes (live stream + stored history).
+  const displayContent = stripAttachmentMarkers(message.content);
   const showCaret =
-    message.streaming && !message.content && !message.errorCode;
+    message.streaming && !displayContent && !message.errorCode;
   const showCopy =
-    Boolean(message.content) && !message.streaming && !message.errorCode;
+    Boolean(displayContent) && !message.streaming && !message.errorCode;
 
   const onCopy = (): void => {
-    void copyText(message.content).then((ok) => {
+    void copyText(displayContent).then((ok) => {
       if (!ok) return;
       if (copiedTimer.current !== null) {
         window.clearTimeout(copiedTimer.current);
@@ -83,13 +86,13 @@ export function MessageItem({
         />
       ) : (
         <>
-          {message.content ? (
+          {displayContent ? (
             <div dir="auto">
-              <Markdown content={message.content} />
+              <Markdown content={displayContent} />
             </div>
           ) : null}
           {showCaret ? <TypingIndicator /> : null}
-          {message.streaming && message.content ? (
+          {message.streaming && displayContent ? (
             <span
               className="ml-0.5 inline-block w-0.5 animate-pulse bg-accent"
               aria-hidden

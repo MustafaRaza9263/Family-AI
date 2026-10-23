@@ -37,11 +37,18 @@ export type LlmToolCall = {
   function: { name: string; arguments: string };
 };
 
+/** OpenAI-compatible tool_choice; used to force show_images on clear image intents. */
+export type LlmToolChoice =
+  | 'auto'
+  | 'required'
+  | { type: 'function'; function: { name: string } };
+
 export type StreamChatParams = {
   messages: LlmChatMessage[];
   tools: LlmToolDefinition[];
   maxTokens: number;
   signal: AbortSignal;
+  toolChoice?: LlmToolChoice;
 };
 
 export interface LlmClient {

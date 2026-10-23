@@ -128,7 +128,8 @@ export async function handleChat(options: {
     conversationId: conversation._id,
     userId: options.userId,
     role: 'assistant',
-    content: output.emittedFallback ? output.text : result.text,
+    // Always persist guarded text (markers stripped; empty → fallback).
+    content: output.text,
     attachments: result.attachments,
     model: env.LLM_MODEL,
     promptTokens: result.usage.promptTokens,

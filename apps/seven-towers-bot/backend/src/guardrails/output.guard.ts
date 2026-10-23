@@ -1,4 +1,5 @@
 import { logger } from '../lib/logger';
+import { stripAttachmentMarkers } from './attachment-markers';
 
 export const EMPTY_ANSWER_FALLBACK =
   "Sorry, I couldn't produce an answer. Please try rephrasing your question.";
@@ -14,6 +15,7 @@ export type OutputGuardResult = {
  * Post-answer checks.
  * Streamed text cannot be retracted, so most findings are flags/logs only;
  * empty answers get a fallback message that is also emitted as a token.
+ * Attachment markers are stripped before persist (UI also strips for live stream).
  * Pass the project's system.md so leak detection stays tied to the loaded pack.
  */
 export async function guardOutput(
@@ -22,7 +24,7 @@ export async function guardOutput(
   systemMd: string,
 ): Promise<OutputGuardResult> {
   const guardFlags: string[] = [];
-  let out = text;
+  let out = stripAttachmentMarkers(text);
   let emittedFallback = false;
 
   if (out.trim().length === 0) {

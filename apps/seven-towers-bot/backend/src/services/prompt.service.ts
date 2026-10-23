@@ -1,3 +1,7 @@
+import {
+  imagesShownMarker,
+  stripAttachmentMarkers,
+} from '../guardrails/attachment-markers';
 import { loadGapReportingPrompt } from '../lib/gap-reporting-prompt';
 import type { ProjectKnowledge } from './knowledge.service';
 import { buildSystemPromptText } from './knowledge-validate';
@@ -36,7 +40,7 @@ export function clearPromptCache(): void {
   promptCache.clear();
 }
 
-function attachmentMarker(attachments: unknown[]): string {
+function imageIdsFromAttachments(attachments: unknown[]): string[] {
   const images: string[] = [];
   for (const raw of attachments) {
     if (!raw || typeof raw !== 'object') {
@@ -49,10 +53,7 @@ function attachmentMarker(attachments: unknown[]): string {
       }
     }
   }
-  if (images.length === 0) {
-    return '';
-  }
-  return `\n[Shown to the user: image(s) ${images.join(', ')}]`;
+  return images;
 }
 
 export async function buildMessages(
@@ -64,13 +65,14 @@ export async function buildMessages(
   const messages: LlmMessage[] = [{ role: 'system', content: system }];
 
   for (const msg of history) {
-    let content = msg.content;
+    // Drop any markers the model previously echoed into stored content.
+    let content = stripAttachmentMarkers(msg.content);
     if (
       msg.role === 'assistant' &&
       Array.isArray(msg.attachments) &&
       msg.attachments.length > 0
     ) {
-      content += attachmentMarker(msg.attachments);
+      content += imagesShownMarker(imageIdsFromAttachments(msg.attachments));
     }
     messages.push({ role: msg.role, content });
   }
