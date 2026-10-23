@@ -8,6 +8,9 @@ const isDev = process.env.NODE_ENV === "development";
  * drop them and rely on Express serving out/ on the same origin.
  */
 const nextConfig: NextConfig = {
+  experimental: {
+    agentUpgrade: "security",
+  },
   // Hostname only (no scheme/port). LAN mDNS + Tailscale MagicDNS.
   allowedDevOrigins: ["spark-beee.local", "spark-beee.tail811701.ts.net"],
   ...(isDev
