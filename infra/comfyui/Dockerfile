@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone ComfyUI, pinned so rebuilds don't drift onto untested upstream changes.
-RUN git clone --branch v0.33.2 https://github.com/comfyanonymous/ComfyUI.git .
+RUN git clone --branch v0.41.0 https://github.com/comfyanonymous/ComfyUI.git .
 
 # Install ComfyUI dependencies WITHOUT overwriting NGC-optimized PyTorch.
 # Strip torch/torchvision/torchaudio lines from ComfyUI requirements (pip must not replace NGC wheels).
