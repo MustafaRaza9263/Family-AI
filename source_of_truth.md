@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-10-22
+> Last updated: 2026-10-26
 
 ## 1. What this is
 
@@ -50,21 +50,38 @@ company-ai/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
 │           └── src/        app · components/{ui,layout,auth,chat,rich,admin} · hooks · lib
-├── infra/vllm/             docker-compose.yml · .env.example
+├── infra/
+│   ├── vllm/               docker-compose.yml · .env.example
+│   └── comfyui/            Dockerfile · docker-compose.yml · workflows/ · .env (gitignored)
 ├── evals/                  datasets/ · runners · results/
 ├── packages/               shared code (create only when 2+ apps need it)
 └── docs/                   longer notes
 ```
 
-## 4. Self-hosted LLM (`infra/vllm`)
+## 4. Self-hosted inference
+
+### LLM (`infra/vllm`)
 
 - **Engine:** vLLM (`vllm/vllm-openai:v0.20.0`) in Docker Compose. `infra/vllm/docker-compose.yml` is the source of truth for all flags.
 - **Model (provisional until evals confirm):** `Qwen/Qwen3.6-35B-A3B-FP8`, served as `qwen3.6`.
 - **Endpoint:** `http://localhost:8000/v1`, bound to localhost, protected by `VLLM_API_KEY`.
-- **Key settings:** 32K context · `--gpu-memory-utilization 0.60` · 8 concurrent requests · prefix caching on · reasoning and tool parsers set · thinking OFF by default per request.
+- **Key settings:** 32K context · `--gpu-memory-utilization 0.40` · 8 concurrent requests · prefix caching on · reasoning and tool parsers set · thinking OFF by default per request.
 - **Weights:** `~/.cache/huggingface`, mounted into the container. Never committed.
 - **Ops** (from `infra/vllm`): `docker compose up -d` · `ps` · `logs -f` · `down`.
-- **Memory:** one shared pool. Run one main model at a time.
+
+### Image gen (`infra/comfyui`)
+
+- **Engine:** ComfyUI **v0.33.2**, always-on. Image `company-ai/comfyui:local` from NVIDIA’s DGX Spark playbook Dockerfile (NGC PyTorch `26.02-py3`; ComfyUI deps installed without replacing NGC torch; torchaudio stubbed for NGC ABI). Listens `0.0.0.0:8188`.
+- **Model:** Z-Image-Turbo BF16 — `diffusion_models/z_image_turbo_bf16.safetensors`, `text_encoders/qwen_3_4b.safetensors`, `vae/ae.safetensors` (Hugging Face `Comfy-Org/z_image_turbo` split_files).
+- **Data (outside Git, NVMe):** `COMFY_HOME` → `~/comfyui/{models,input,output}` (set in `infra/comfyui/.env`, gitignored). Workflows in Git: `infra/comfyui/workflows/` (e.g. Z-Image-Turbo text-to-image).
+- **Endpoint:** `http://127.0.0.1:8188` (localhost only). Open via Cursor **Ports** forward — not wired into any app yet.
+- **Limits:** `gpus: all` · `mem_limit` / `memswap_limit` **30g** (equal = no container swap) · `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. After load expect ~20–25 Gi resident; raise the cap if peaks near 30 Gi.
+- **Ops** (from `infra/comfyui`): `docker compose up -d --build` · `logs -f` · `down`. Before a cold model load on the Spark: `sync; echo 3 | sudo tee /proc/sys/vm/drop_caches` — page cache of model files shares the unified CPU/GPU pool; “free” can look low until cache is dropped (reclaimable).
+- **Not yet:** app/API integration; on-demand start/stop.
+
+### Shared memory / GPU
+
+One unified pool on the Spark. vLLM and ComfyUI both use the GPU; a generate may briefly slow the bot. Docker’s 30g cap bounds the ComfyUI container (OOM kills that job); it does not reserve memory when idle.
 
 ## 5. Adding a new model
 
@@ -102,9 +119,14 @@ A new *project* for an existing app (for example another property) is just a new
 
 ## 8. Deployment and serving
 
-- **Development:** Cursor Remote-SSH to the Spark over Tailscale. Code lives at `~/projects/company-ai` on the Spark. A private Git remote is the backup.
-- **Run:** Docker Compose on the Spark: `vllm`, `mongo`, and one container per app. `restart: unless-stopped`. Config via `.env` (never committed).
-- **Access:** LAN at `http://<spark-lan-ip>:4000` (works offline). Public: Tailscale Funnel for the proof of concept, Cloudflare Tunnel with our own domain for production. The tunnel points only at the app port.
+- **Development:** Cursor Remote-SSH to the Spark over Tailscale. Code lives at `~/projects/company-ai` on the Spark. A private Git remote is the backup. Local run is still `npm run dev` (UI :3000, API :4000) against host-published Mongo/vLLM.
+- **Run:** Docker Compose on the Spark. Shared external network `company-ai` (create once: `docker network create company-ai`). `restart: unless-stopped`. Secrets stay in each app's `backend/.env` (never committed).
+  - LLM: `infra/vllm/docker-compose.yml`. Host bind `127.0.0.1:8000` only. Apps reach it as `http://vllm:8000/v1`.
+  - Image gen: `infra/comfyui/docker-compose.yml`. Host bind `127.0.0.1:8188` only. Models/IO via `COMFY_HOME` bind mounts; not on the `company-ai` Docker network yet.
+  - App + Mongo: `apps/seven-towers-bot/docker-compose.yml`. Image from `apps/seven-towers-bot/Dockerfile` (frontend `out/` + backend `dist`, non-root, port 4000). Mongo is `mongo:7` with **no published ports**, using the existing named volume `mongo_data` (current users and chats). Compose overrides `MONGODB_URI` to host `mongo` and `LLM_BASE_URL` to `http://vllm:8000/v1`. App publish is `127.0.0.1:4000:4000`.
+  - Knowledge: `backend/knowledge` is bind-mounted. Edit on the host, then admin **Reload knowledge** — no image rebuild.
+  - First admin (empty DB only): `docker compose --env-file backend/.env exec -it seven-towers-bot npm run seed:admin`. Skip when reusing `mongo_data`.
+- **Access:** On the Spark, `http://127.0.0.1:4000`. The app port is localhost-only. Public proof of concept: Tailscale Funnel (`tailscale funnel --bg http://127.0.0.1:4000`) at `https://spark-beee.tail811701.ts.net/`. Cloudflare Tunnel with our own domain for production. The tunnel points only at the app port.
 - **Same build, both ways:** relative URLs, cookie `Secure` set by protocol, no external assets.
 - **To do:** nightly `mongodump` to another machine · UPS · wired Ethernet · fixed LAN IP.
 - **Known risk:** the Spark is a single point of failure. Accepted at this scale.
@@ -127,7 +149,7 @@ A new *project* for an existing app (for example another property) is just a new
 
 | Decision | Why |
 |---|---|
-| vLLM in Docker as the only inference engine | Industry standard, OpenAI-compatible, handles concurrency |
+| vLLM in Docker as the only LLM inference engine | Industry standard, OpenAI-compatible, handles concurrency; image gen is separate (ComfyUI) |
 | Qwen3.6-35B-A3B-FP8 (provisional) | MoE with 3B active parameters is fast; FP8 ≈ 35 GB; official weights. Evals decide |
 | Document in the prompt, no RAG (≤10 pages) | Simpler; prefix caching keeps it fast |
 | Thinking off by default | Latency; enable only where evals show a gain |
@@ -140,6 +162,9 @@ A new *project* for an existing app (for example another property) is just a new
 | Static export served by Express | One origin; no proxy buffering of streamed answers |
 | No LangChain; small own agent loop | Understandable code |
 | Unknown-question registry via terminal `report_gap` tool + `knowledge_gaps` collection | Surfaces missing KB facts for content owners without polluting chat history or the SSE stream |
+| ComfyUI under `infra/comfyui`, always-on | Same place as other platform services; on-demand start/stop deferred |
+| NVIDIA Spark playbook Dockerfile, ComfyUI pinned v0.33.2 | Keeps NGC-optimized PyTorch on GB10; pin avoids untested upstream drift |
+| Z-Image-Turbo weights in `~/comfyui` (not Git); 30g mem + memswap cap | Large assets stay on NVMe; ceiling covers BF16 + text encoder + 2K activations; equal memswap blocks swap spill |
 
 ## 11. Open items
 

@@ -1,0 +1,73 @@
+# Production compose for seven-towers-bot.
+# Interpolation (${MONGO_INITDB_*}) needs backend/.env in the project env:
+#   docker compose --env-file backend/.env up -d --build
+name: seven-towers-bot
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    restart: unless-stopped
+    # Existing Spark volume. INITDB is a no-op when this data dir already exists.
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-mongoadmin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set MONGO_INITDB_ROOT_PASSWORD — run with --env-file backend/.env}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - default
+
+  seven-towers-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seven-towers-bot
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      # Host .env points at localhost; inside Compose use service names.
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-mongoadmin}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/seven_towers_bot?authSource=admin
+      LLM_BASE_URL: http://vllm:8000/v1
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./backend/knowledge:/app/backend/knowledge
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - default
+      - company-ai
+
+volumes:
+  mongo_data:
+    external: true
+    name: mongo_data
+
+networks:
+  company-ai:
+    external: true

@@ -25,7 +25,7 @@ services:
       - --max-model-len
       - "32768"
       - --gpu-memory-utilization
-      - "0.60"
+      - "0.40"
       - --max-num-seqs
       - "8"
       - --reasoning-parser
@@ -35,7 +35,11 @@ services:
       - qwen3_coder
       - --enable-prefix-caching
     networks:
-        - company-ai
+      - company-ai
+
+# Shared with apps/seven-towers-bot (and Open WebUI). Create once:
+#   docker network create company-ai
+# Host bind stays 127.0.0.1:8000; other containers reach vllm:8000 on this network.
 networks:
   company-ai:
     external: true

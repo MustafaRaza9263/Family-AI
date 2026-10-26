@@ -1,0 +1,12 @@
+node_modules
+.env
+.next
+dist
+dist-seed
+frontend/out
+backend/knowledge/*/source
+**/.env
+**/node_modules
+**/.next
+**/dist
+**/dist-seed

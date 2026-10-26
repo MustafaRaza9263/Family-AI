@@ -1,0 +1,19 @@
+services:
+  comfyui:
+    build: .
+    image: company-ai/comfyui:local
+    container_name: comfyui
+    # GPU setting: copy exactly what infra/vllm uses (gpus: all or runtime: nvidia)
+    gpus: all
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8188:8188"        # localhost only, reached through Cursor's port forward
+    mem_limit: 30g
+    memswap_limit: 30g               # same value = no swap for this container
+    environment:
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    volumes:
+      - ${COMFY_HOME}/models:/opt/ComfyUI/models
+      - ${COMFY_HOME}/input:/opt/ComfyUI/input
+      - ${COMFY_HOME}/output:/opt/ComfyUI/output
+      - ./workflows:/opt/ComfyUI/user/default/workflows   # saved workflows land in Git
