@@ -71,11 +71,13 @@ company-ai/
 
 ### Image gen (`infra/comfyui`)
 
-- **Engine:** ComfyUI **v0.33.2**, always-on. Image `company-ai/comfyui:local` from NVIDIA’s DGX Spark playbook Dockerfile (NGC PyTorch `26.02-py3`; ComfyUI deps installed without replacing NGC torch; torchaudio stubbed for NGC ABI). Listens `0.0.0.0:8188`.
-- **Model:** Z-Image-Turbo BF16 — `diffusion_models/z_image_turbo_bf16.safetensors`, `text_encoders/qwen_3_4b.safetensors`, `vae/ae.safetensors` (Hugging Face `Comfy-Org/z_image_turbo` split_files).
-- **Data (outside Git, NVMe):** `COMFY_HOME` → `~/comfyui/{models,input,output}` (set in `infra/comfyui/.env`, gitignored). Workflows in Git: `infra/comfyui/workflows/` (e.g. Z-Image-Turbo text-to-image).
+- **Engine:** ComfyUI **v0.41.0** (Flux 3 needs ≥0.41), always-on. Image `company-ai/comfyui:local` from NVIDIA’s DGX Spark playbook Dockerfile (NGC PyTorch `26.02-py3`; ComfyUI deps installed without replacing NGC torch; torchaudio stubbed for NGC ABI). Listens `0.0.0.0:8188`.
+- **Models** (weights outside Git under `COMFY_HOME` → `~/comfyui/{models,input,output}`; `.env` gitignored):
+  - **Z-Image-Turbo BF16** — `z_image_turbo_bf16.safetensors` + `qwen_3_4b.safetensors` + `ae.safetensors` (`Comfy-Org/z_image_turbo` split_files).
+  - **FLUX 3 Image Klein** — gated `black-forest-labs/flux-3-image-klein-comfy`. On disk today: distilled BF16 (`flux3-image-klein-bf16.safetensors`) + `qwen3vl_4b_bf16.safetensors` + `flux2-vae.safetensors` + prompt upsampler `qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors`. Workflows also reference base/int8/w4a8/bf16-upsampler variants — download those from the same HF repo before running those graphs.
+- **Workflows** (in Git, `infra/comfyui/workflows/`): `image_z_image_turbo.json`; Flux 3 Klein matrix `flux3_klein_{,base_}{bf16,int8}_{t2i,i2i,mi2i}.json` (text-to-image, image-to-image, multi-image-to-image; distilled vs base).
 - **Endpoint:** `http://127.0.0.1:8188` (localhost only). Open via Cursor **Ports** forward — not wired into any app yet.
-- **Limits:** `gpus: all` · `mem_limit` / `memswap_limit` **30g** (equal = no container swap) · `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. After load expect ~20–25 Gi resident; raise the cap if peaks near 30 Gi.
+- **Limits:** `gpus: all` · `mem_limit` / `memswap_limit` **30g** (equal = no container swap) · `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. Z-Image after load ~20–25 Gi; Flux + upsampler is heavier — watch `docker stats` and raise the cap if peaks near 30 Gi.
 - **Ops** (from `infra/comfyui`): `docker compose up -d --build` · `logs -f` · `down`. Before a cold model load on the Spark: `sync; echo 3 | sudo tee /proc/sys/vm/drop_caches` — page cache of model files shares the unified CPU/GPU pool; “free” can look low until cache is dropped (reclaimable).
 - **Not yet:** app/API integration; on-demand start/stop.
 
@@ -163,8 +165,9 @@ A new *project* for an existing app (for example another property) is just a new
 | No LangChain; small own agent loop | Understandable code |
 | Unknown-question registry via terminal `report_gap` tool + `knowledge_gaps` collection | Surfaces missing KB facts for content owners without polluting chat history or the SSE stream |
 | ComfyUI under `infra/comfyui`, always-on | Same place as other platform services; on-demand start/stop deferred |
-| NVIDIA Spark playbook Dockerfile, ComfyUI pinned v0.33.2 | Keeps NGC-optimized PyTorch on GB10; pin avoids untested upstream drift |
-| Z-Image-Turbo weights in `~/comfyui` (not Git); 30g mem + memswap cap | Large assets stay on NVMe; ceiling covers BF16 + text encoder + 2K activations; equal memswap blocks swap spill |
+| NVIDIA Spark playbook Dockerfile, ComfyUI pinned (now **v0.41.0**) | Keeps NGC-optimized PyTorch on GB10; pin avoids untested upstream drift; 0.41+ required for Flux 3 |
+| Image weights in `~/comfyui` (not Git); 30g mem + memswap cap | Large assets stay on NVMe; ceiling for Z-Image / Flux; equal memswap blocks swap spill |
+| FLUX 3 Image Klein + official Comfy workflows in `infra/comfyui/workflows/` | Primary image model alongside Z-Image-Turbo; t2i / i2i / mi2i for distilled and base (bf16 + int8 graphs) |
 
 ## 11. Open items
 
