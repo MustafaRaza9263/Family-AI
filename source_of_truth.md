@@ -262,12 +262,12 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ## 9. Deployment and serving
 
-- **Development:** Cursor Remote-SSH to the Spark over Tailscale. Code lives at `~/projects/company-ai` on the Spark. A private Git remote is the backup. Local run is still `npm run dev` (bot UI :3000 / API :4000; Studio UI :3001 / API :4001) against host-published Mongo/vLLM/ComfyUI.
+- **Development:** Cursor Remote-SSH to the Spark over Tailscale. Code lives at `~/projects/company-ai` on the Spark. A private Git remote is the backup. Local run is still `npm run dev` (bot UI :3000 / API :4000; Studio UI :3001 / API :4001) against host-published Mongo/vLLM/ComfyUI (`127.0.0.1` only). Shared Mongo uses separate DB names (`seven_towers_bot`, `studio`). In Compose, backends also reach Mongo as hostname `mongo` on network `company-ai`.
 - **Run:** Docker Compose on the Spark. Shared external networks: `company-ai` (create once: `docker network create company-ai`) and `studio-engine` (create once: `docker network create studio-engine`). `restart: unless-stopped`. Secrets stay in each app's `backend/.env` (never committed).
   - LLM: `infra/vllm/docker-compose.yml`. Host bind `127.0.0.1:8000` only. Apps reach it as `http://vllm:8000/v1`.
   - Image/video gen: `infra/comfyui/docker-compose.yml`. Host bind `127.0.0.1:8188` only. On networks `default` and `studio-engine`, not on `company-ai`. Models mounted read-only.
-  - Bot app + Mongo: `apps/seven-towers-bot/docker-compose.yml`. Image from `apps/seven-towers-bot/Dockerfile` (frontend `out/` + backend `dist`, non-root, port 4000). Mongo is `mongo:7` with **no published ports**, using the existing named volume `mongo_data` (current users and chats). Compose overrides `MONGODB_URI` to host `mongo` and `LLM_BASE_URL` to `http://vllm:8000/v1`. App publish is `127.0.0.1:4000:4000`.
-  - Studio app + Mongo (planned): `apps/studio/docker-compose.yml`. Its own `mongo:7`, no published ports, its own named volume. Studio is on its default network and on `studio-engine`, with `COMFY_URL=http://comfyui:8188`. Publish `127.0.0.1:4001:4001`. Generated files in a bind-mounted data directory.
+  - Bot app + shared Mongo: `apps/seven-towers-bot/docker-compose.yml`. Image from `apps/seven-towers-bot/Dockerfile` (frontend `out/` + backend `dist`, non-root, port 4000). Mongo is `mongo:7`, volume `mongo_data`, on networks `default` and `company-ai`, host bind `127.0.0.1:27017` only (for local `npm run` / seed). Databases: `seven_towers_bot` (bot) and `studio` (Studio) — same server, separate DBs. Compose overrides bot `MONGODB_URI` to host `mongo` and `LLM_BASE_URL` to `http://vllm:8000/v1`. App publish is `127.0.0.1:4000:4000`.
+  - Studio app (planned): `apps/studio/docker-compose.yml`. **No Mongo service** — uses the shared `mongo` on `company-ai` with DB `studio` (`MONGODB_URI` host `mongo`). Studio is on `company-ai` and `studio-engine`, with `COMFY_URL=http://comfyui:8188`. Publish `127.0.0.1:4001:4001`. Generated files in a bind-mounted data directory.
   - Knowledge (bot): `backend/knowledge` is bind-mounted. Edit on the host, then admin **Reload knowledge** — no image rebuild.
   - First admin (empty DB only): `docker compose --env-file backend/.env exec -it <service> npm run seed:admin`. Skip when reusing an existing volume.
 - **Access:** On the Spark, bot at `http://127.0.0.1:4000`, Studio at `http://127.0.0.1:4001`; app ports are localhost-only.
@@ -339,4 +339,4 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 - Studio: attribution wording required by the Klein and LTX licenses when model names are hidden.
 - Studio: scheduler improvement to group queued jobs by model family; measure bot slowdown during video jobs and decide when to pause video during bot busy hours.
 - Studio: upscaling recipes (image and video) need extra custom nodes and an engine image rebuild.
-- Cleanup: delete the unused base and int8 Flux workflow JSONs from `infra/comfyui/workflows/`; delete parked Wan 2.2 weights when disk space is needed.
+- Cleanup: delete the unused base and int8 Flux workflow JSONs from `infra/comfyui/workflows/`; delete parked Wan 2.2 weights when disk space is needed.    

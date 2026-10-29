@@ -5,3 +5,6 @@ out
 .env
 data
 *.log
+.env.local
+backend/.env
+frontend/.env.local

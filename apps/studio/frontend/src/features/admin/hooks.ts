@@ -1,0 +1,67 @@
+'use client';
+
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryKey,
+} from '@tanstack/react-query';
+import type { AdminUserListQuery, AdminUserListResponse } from '@studio/shared';
+import { toast } from 'sonner';
+import { ApiError } from '@/lib/api-client';
+import * as adminApi from './api';
+
+export function usersQueryKey(query: AdminUserListQuery): QueryKey {
+  return ['admin-users', query];
+}
+
+export function useAdminUsers(query: AdminUserListQuery) {
+  return useQuery({
+    queryKey: usersQueryKey(query),
+    queryFn: () => adminApi.listUsers(query),
+  });
+}
+
+export function useUpdateUserStatus(query: AdminUserListQuery) {
+  const queryClient = useQueryClient();
+  const key = usersQueryKey(query);
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: 'active' | 'disabled';
+    }) => adminApi.updateUserStatus(id, { status }),
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<AdminUserListResponse>(key);
+      if (previous) {
+        queryClient.setQueryData<AdminUserListResponse>(key, {
+          ...previous,
+          items: previous.items.map((user) =>
+            user.id === id ? { ...user, status } : user,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(key, ctx.previous);
+      }
+      const message =
+        err instanceof ApiError ? err.message : 'Update failed';
+      toast.error(message);
+    },
+    onSuccess: (_data, vars) => {
+      const label =
+        vars.status === 'active' ? 'User approved' : 'User updated';
+      toast.success(label);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+}

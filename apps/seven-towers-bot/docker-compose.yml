@@ -14,6 +14,10 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set MONGO_INITDB_ROOT_PASSWORD — run with --env-file backend/.env}
     volumes:
       - mongo_data:/data/db
+    # Localhost only — so host `npm run` / seed scripts can reach Mongo.
+    # Not published on 0.0.0.0; LAN/Tailscale cannot hit this port.
+    ports:
+      - "127.0.0.1:27017:27017"
     healthcheck:
       test:
         [
@@ -24,8 +28,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    # On company-ai so other apps (Studio) can use this Mongo with a separate DB name.
     networks:
       - default
+      - company-ai
 
   seven-towers-bot:
     build:
