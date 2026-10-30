@@ -22,13 +22,17 @@ export function createNodeTracker(): NodeTracker {
  */
 export function applyRunEvent(tracker: NodeTracker, ev: RunEvent): void {
   if (ev.type === 'nodes_cached') {
-    for (const nodeId of ev.nodeIds) {
-      tracker.nodes.push({
-        nodeId,
-        class: '',
+    for (const node of ev.nodes) {
+      const entry: NodeTiming = {
+        nodeId: node.nodeId,
+        class: node.nodeClass,
         ms: 0,
         cached: true,
-      });
+      };
+      if (node.nodeTitle !== undefined) {
+        entry.title = node.nodeTitle;
+      }
+      tracker.nodes.push(entry);
     }
     return;
   }

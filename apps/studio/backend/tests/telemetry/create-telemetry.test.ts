@@ -141,7 +141,7 @@ describe('createTelemetry', () => {
     clock.advance(100);
     telemetry.runEvent('job-4', {
       type: 'nodes_cached',
-      nodeIds: ['c1'],
+      nodes: [{ nodeId: 'c1', nodeClass: 'CLIPLoader', nodeTitle: 'Load CLIP' }],
       at: clock.now(),
     });
     clock.advance(100);
@@ -160,7 +160,13 @@ describe('createTelemetry', () => {
 
     const row = (await store.findByJobId('job-4')) as JobMetricsRow;
     expect(row.nodes).toEqual([
-      { nodeId: 'c1', class: '', ms: 0, cached: true },
+      {
+        nodeId: 'c1',
+        class: 'CLIPLoader',
+        title: 'Load CLIP',
+        ms: 0,
+        cached: true,
+      },
       { nodeId: 'n1', class: 'KSampler', ms: 500, cached: false },
     ]);
     expect(row.phases.sampleMs).toBe(500);

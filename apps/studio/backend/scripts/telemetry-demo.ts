@@ -44,7 +44,10 @@ async function main(): Promise<void> {
   await sleep(200);
   telemetry.runEvent(jobId, {
     type: 'nodes_cached',
-    nodeIds: ['1', '2'],
+    nodes: [
+      { nodeId: '1', nodeClass: 'CLIPLoader', nodeTitle: 'Load CLIP' },
+      { nodeId: '2', nodeClass: 'VAELoader', nodeTitle: 'Load VAE' },
+    ],
     at: new Date(),
   });
 

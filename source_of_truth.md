@@ -12,7 +12,7 @@ On-premise AI assistants and creative tools for the company, powered by one self
 | 1 | `seven-towers-bot` | Q&A on the Seven Towers project from ≤10 pages of company data, for the public (prospective buyers). Proof of concept | In development |
 | 2 | `hub-bot` | Bosses-only assistant over the cloud CRM / EMS / HR / CMS via tool calling | Planned |
 | 3 | `social-bot` | Replies to WhatsApp / social comments / app reviews, human approval for decisions | Planned |
-| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Scaffolded; text-to-image first |
+| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Auth live; Comfy client + `image-create-fast` ready; queue/UI create next |
 
 Build order: 1 → 2 → 3. `studio` is a parallel track and shares the GPU with bot 1.
 
@@ -56,9 +56,9 @@ company-ai/
 │   └── studio/             npm workspaces: shared · backend · frontend (full tree in §8.13)
 │       ├── shared/         Zod schemas + types used by both sides (@studio/shared, built to dist/)
 │       ├── backend/
-│       │   ├── src/        config · routes · controllers · services · db · middleware · lib · telemetry · comfy (empty) · queue (empty)
+│       │   ├── src/        config · routes · controllers · services · db · middleware · lib · telemetry · comfy · queue (empty)
 │       │   ├── recipes/<id>/   manifest.json · workflow.api.json   (one folder per recipe)
-│       │   ├── scripts/    seed-admin · telemetry-demo
+│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
@@ -186,21 +186,31 @@ Rules:
 
 ### 8.4 Recipes (the ComfyUI contract)
 
-- One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (the "Export (API)" file from ComfyUI) and `manifest.json` (id, output type, allowed parameters with enums/ranges, defaults, which node title and input field each parameter writes to, locked quality-vs-time notes).
-- **Nodes are found by title, never by id.** Title convention: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `OUT_IMAGE`, `OUT_VIDEO`. At boot the backend checks every title in every manifest exists exactly once and refuses to start otherwise.
-- Everything not in the manifest stays locked in the file (steps, cfg, sampler, models).
-- `image-create-fast` (Z-Image-Turbo), as exported:
+- One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (the "Export (API)" file from ComfyUI) and `manifest.json` (id, tool `image`|`video`, `timeoutSeconds`, params with text/enum targets, seed target, output title + prefix field). Path from env `RECIPES_DIR` (default `./recipes`).
+- **Nodes are found by title, never by id.** Title convention: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `OUT_IMAGE`, `OUT_VIDEO`. Node ids are opaque strings (e.g. `"57:8"`). At boot `loadRecipes` validates both JSON files with Zod, builds a title → nodeId index, and refuses to start if any manifest title is missing, duplicated, or missing a target input field.
+- Everything not in the manifest stays locked in the file (steps, cfg, sampler, models, `batch_size`). `patchGraph` structuredClones the stored graph, writes only allowed params, fills enum defaults, sets a fresh random seed (`crypto.randomInt`, below 2**48) and `filename_prefix = studio/<jobId>`, and returns resolved values (e.g. width/height). It never mutates the recipe on disk.
+- `image-create-fast` (Z-Image-Turbo) is live: both `manifest.json` and `workflow.api.json` are in Git.
 
 | Title | Class | Backend writes |
 |---|---|---|
-| `IN_PROMPT` | CLIPTextEncode | `text` |
-| `IN_SIZE` | EmptySD3LatentImage | `width`, `height`, `batch_size` |
+| `IN_PROMPT` | CLIPTextEncode | `text` (param `prompt`, maxLength 1000) |
+| `IN_SIZE` | EmptySD3LatentImage | `width`, `height` from `aspectRatio` enum (1:1 → 1024×1024, 4:5 → 896×1120, 16:9 → 1344×768, 9:16 → 768×1344; all multiples of 16). `batch_size` stays 1 |
 | `IN_SAMPLER` | KSampler | `seed` (fresh per job). Locked: steps 8, cfg 1, `res_multistep`, `simple` |
 | `OUT_IMAGE` | SaveImage | `filename_prefix` = `studio/<jobId>` |
 
-- ComfyUI endpoints used: `POST /prompt` · WebSocket `/ws` · `GET /history/{id}` · `GET /view` · `POST /upload/image` · `POST /interrupt` · `GET /queue` and `POST /queue` (delete) · `GET /system_stats`.
+- ComfyUI endpoints used by the client: `POST /prompt` (with `client_id` + caller-chosen `prompt_id`) · WebSocket `/ws?clientId=` · `GET /history/{id}` · `GET /view` · `POST /interrupt` · `GET /queue` · `GET /system_stats`. Upload (`POST /upload/image`) and queue-delete come later with edit/reference recipes and the job worker.
 - Unlike the original idea of exposing templates, no user-built workflows exist. Adding a capability = authoring a graph in ComfyUI (admin), exporting API format, titling nodes, writing a manifest. If a graph needs a custom node, the engine image is rebuilt (custom nodes are not user-installable).
-- Failures from ComfyUI become generic user-facing codes; full detail goes only to logs.
+- Failures from ComfyUI become generic engine codes only: `ENGINE_UNAVAILABLE`, `ENGINE_TIMEOUT`, `ENGINE_FAILED`, `ENGINE_CANCELLED`, `ENGINE_BAD_OUTPUT`. Full Comfy detail goes to the logger only, never into user-visible messages.
+
+### 8.4.1 ComfyUI client (`src/comfy/`)
+
+Self-contained module; the only Studio code that talks to ComfyUI. Must not import telemetry, Express, Mongo or db code. Uses Node's built-in `fetch` and `WebSocket` (no extra runtime dependency for the client).
+
+- **Interfaces (tests use fakes):** `ComfyHttp` (submit / history / view / interrupt / queue / ping) · `ComfyEvents` (subscribe by `prompt_id` / `isConnected`).
+- **Socket:** one persistent WebSocket per process, one `clientId`, auto-reconnect with capped backoff; ignores binary preview frames; Zod-parses known text frames; unknown/malformed frames logged at debug and dropped.
+- **`runComfyPrompt`:** subscribe before submit (client supplies `prompt_id`) → hooks (`onSubmitted`, `onCached` with `{nodeId,nodeClass,nodeTitle?}`, `onNodeStart`, `onProgress`) → finish on `execution_success` / `executing` null → read history + `/view` for the `OUT_IMAGE` node (bytes in memory, no disk write). Safety net: poll history every 5 s. Timeout (manifest `timeoutSeconds`) or `AbortSignal` → `/interrupt` then `ENGINE_TIMEOUT` / `ENGINE_CANCELLED`.
+- **Factory:** `createComfy({ env, logger })` → `{ recipes, run(recipeId, { jobId, values, hooks, signal }), ping(), close() }` (`run` = `patchGraph` + `runComfyPrompt`).
+- **Smoke:** `npm run comfy:smoke` → `scripts/comfy-smoke.ts` hits the real engine and wires real telemetry in the script only (`--prompt`, `--aspect`, `--repeat`, `--verbose`, `--cancel-after`). Saves PNGs under `./tmp/smoke/` (`tmp/` gitignored).
 
 ### 8.5 Queue, limits and recovery
 
@@ -243,7 +253,7 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 ### 8.9 Hiding the engine
 
 - The API and UI use only product wording ("Fast", "Best quality", "Edit"). No model names, node names or workflow names ever leave the backend.
-- ComfyUI errors are replaced by generic codes for users and logged in full for the admin.
+- ComfyUI errors are replaced by the generic `ENGINE_*` codes (section 8.4) for users and logged in full for the admin.
 - Output files carry no embedded workflow (`--disable-metadata`); files are re-encoded on download if needed.
 - Check each model license's attribution wording before dropping credit everywhere (Klein and LTX terms).
 
@@ -255,16 +265,16 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.11 Run and status
 
-- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo`.
-- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (`http://127.0.0.1:8188` in dev, `http://comfyui:8188` in compose), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`. All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`).
-- **Storage:** results under `DATA_DIR/<userId>/`, served only to the owner (and admins, audited). Retention 30 days by default.
-- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin user approval live (backend + frontend); shared Zod schemas for auth/admin; Z-Image `image-create-fast` workflow exported (API format). Self-contained **telemetry module** exists under `src/telemetry/` (unit-tested; demo script); **not wired** to routes, queue or ComfyUI yet. `comfy/` and `queue/` folders are empty placeholders.
-- **Test approach:** no fake ComfyUI server for now. Unit tests cover auth, sessions, admin, env, and telemetry (parsers, phases, aggregates, never-throw API, sampler refcount) with injectable clock/sampler/store. Real GPU sampling is checked with `npm run telemetry:demo` on the Spark.
-- **Next:** wire telemetry when the queue runs jobs → backend ComfyUI client and `image-create-fast` end to end → queue and SSE → frontend create/library screens → Klein edit/reference recipes → LTX video recipes.
+- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke`.
+- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`. All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`).
+- **Storage:** results under `DATA_DIR/<userId>/`, served only to the owner (and admins, audited). Retention 30 days by default. Smoke outputs under `./tmp/smoke/` (gitignored; not product storage).
+- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin user approval live (backend + frontend); shared Zod schemas for auth/admin. **ComfyUI client** under `src/comfy/` is implemented (recipes load/patch, HTTP + persistent WebSocket, `runComfyPrompt`, `createComfy`, unit tests with fakes, `comfy:smoke` against the real engine). `image-create-fast` has both `manifest.json` and `workflow.api.json`. Self-contained **telemetry** under `src/telemetry/` (unit-tested; demo + smoke can wire it); **not wired** to routes or the job queue yet. `queue/` is still an empty placeholder.
+- **Test approach:** no fake ComfyUI HTTP server. Unit tests cover auth, sessions, admin, env, telemetry, and comfy (manifest/graph schemas, title-index boot errors, `patchGraph`, WebSocket frame parser, `runComfyPrompt` with injectable `ComfyHttp`/`ComfyEvents`). Real GPU sampling: `npm run telemetry:demo`. Real engine: `npm run comfy:smoke` on the Spark.
+- **Next:** job queue + SSE (wire telemetry + `createComfy` in the worker) → frontend create/library screens → Klein edit/reference recipes → LTX video recipes.
 
 ### 8.12 Telemetry (per-job metrics)
 
-Self-contained module at `apps/studio/backend/src/telemetry/`. Callers pass plain data; it must not import ComfyUI, recipes, Express or queue code (only `type Logger` and `Clock` from `src/lib`). Public API: `createTelemetry({ store, sampler, logger, clock?, config? })` → `runStart` / `runEvent` / `runEnd` / `flush`. Fire-and-forget, never throws; `flush` waits for in-flight saves and stops the sampler. Disabled when `TELEMETRY_ENABLED=false` (no-op functions).
+Self-contained module at `apps/studio/backend/src/telemetry/`. Callers pass plain data; it must not import ComfyUI, recipes, Express or queue code (only `type Logger` and `Clock` from `src/lib`). Public API: `createTelemetry({ store, sampler, logger, clock?, config? })` → `runStart` / `runEvent` / `runEnd` / `flush`. Fire-and-forget, never throws; `flush` waits for in-flight saves and stops the sampler. Disabled when `TELEMETRY_ENABLED=false` (no-op functions). `nodes_cached` events carry `{ nodeId, nodeClass, nodeTitle? }[]` (not bare ids) so cached rows keep class/title. The comfy smoke script forwards comfy hooks into `runEvent`; the queue will do the same when wired.
 
 **One row per finished job** (`job_metrics`), fields:
 
@@ -279,7 +289,7 @@ Self-contained module at `apps/studio/backend/src/telemetry/`. Callers pass plai
 | Hardware | `samples`, GPU util/power/temp avg&peak, mem used/available/swap, `memTotalMb`, `gpuAvailable` | Summaries from ~1s samples (+ start/end); raw series not stored. GPU via long-lived `nvidia-smi`; memory via `/proc/meminfo` (Total−Available). Nulls when unavailable |
 | Meta | `createdAt` | Insert time; TTL index uses retention days |
 
-**Stores:** `MemoryMetricsStore` (tests/demo) · `MongoMetricsStore` (injected `Collection`; `ensureIndexes()` for unique `jobId`, `finishedAt`, `{recipeId,finishedAt}`, TTL on `createdAt` — call from boot later, not yet). **Demo:** `npm run telemetry:demo` → `scripts/telemetry-demo.ts` (fake ~5s run, real `SystemSampler`, prints JSON after `flush`).
+**Stores:** `MemoryMetricsStore` (tests/demo/smoke) · `MongoMetricsStore` (injected `Collection`; `ensureIndexes()` for unique `jobId`, `finishedAt`, `{recipeId,finishedAt}`, TTL on `createdAt` — call from boot later, not yet). **Demo:** `npm run telemetry:demo` → `scripts/telemetry-demo.ts` (fake ~5s run, real `SystemSampler`, prints JSON after `flush`).
 
 ### 8.13 Studio layout on disk (current)
 
@@ -296,10 +306,12 @@ apps/studio/
 │   ├── eslint.config.mjs · vitest.config.ts · .env.example
 │   ├── recipes/
 │   │   └── image-create-fast/
-│   │       └── workflow.api.json   (manifest.json still to add)
+│   │       ├── manifest.json
+│   │       └── workflow.api.json
 │   ├── scripts/
 │   │   ├── seed-admin.ts
-│   │   └── telemetry-demo.ts
+│   │   ├── telemetry-demo.ts
+│   │   └── comfy-smoke.ts
 │   ├── src/
 │   │   ├── server.ts · app.ts
 │   │   ├── config/env.ts
@@ -313,22 +325,30 @@ apps/studio/
 │   │   ├── lib/           logger · clock · errors · password · session-token
 │   │   │                  public-user · escape-regex
 │   │   ├── types/express.d.ts
-│   │   ├── telemetry/              (self-contained; not wired yet)
+│   │   ├── telemetry/              (self-contained; not wired to queue yet)
 │   │   │   ├── index.ts · create-telemetry.ts · types.ts · schema.ts
 │   │   │   ├── config.ts · persist.ts · run-tracker.ts
 │   │   │   ├── nodes.ts · phases.ts · aggregates.ts
 │   │   │   ├── sampler/   types · system-sampler · default-spawn
 │   │   │   │              nvidia-smi · meminfo
 │   │   │   └── store/     types · memory-store · mongo-store
-│   │   ├── comfy/                  (empty — ComfyUI client next)
+│   │   ├── comfy/                  (only code that talks to ComfyUI)
+│   │   │   ├── index.ts · create-comfy.ts · types.ts · errors.ts
+│   │   │   ├── http.ts · socket.ts · ws-messages.ts
+│   │   │   ├── run-prompt.ts · run-prompt-handlers.ts
+│   │   │   ├── resolve-node.ts · collect-output.ts
+│   │   │   └── recipes/   manifest-schema · graph-schema · recipe
+│   │   │                  load-recipes · patch-graph
 │   │   └── queue/                  (empty — job worker next)
 │   └── tests/
 │       ├── auth · session · admin · password · env · origin-and-errors
 │       ├── helpers/test-app.ts
 │       ├── fakes/         memory-user-repository · memory-session-repository
-│       └── telemetry/     nvidia-smi · meminfo · nodes-phases · aggregates
-│                          create-telemetry · system-sampler · helpers
-│                          fixtures/meminfo.txt
+│       ├── telemetry/     nvidia-smi · meminfo · nodes-phases · aggregates
+│       │                  create-telemetry · system-sampler · helpers
+│       │                  fixtures/meminfo.txt
+│       └── comfy/         manifest-graph-schema · load-recipes · patch-graph
+│                          ws-messages · run-prompt · fakes/ · helpers/
 └── frontend/                       (@studio/frontend)
     ├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs
     ├── AGENTS.md · README.md
@@ -424,7 +444,7 @@ apps/studio/
 - Domain name for Cloudflare Tunnel.
 - Backup target for MongoDB (bot and Studio) and Studio files.
 - Final model choice via evals.
-- Studio: wire telemetry into the job worker (`runStart` / node events / `runEnd` + `MongoMetricsStore.ensureIndexes` at boot); confirm `nvidia-smi` fields on the Spark via `telemetry:demo`.
+- Studio: job queue + SSE; wire telemetry + `createComfy` in the worker (`runStart` / node events / `runEnd` + `MongoMetricsStore.ensureIndexes` at boot); confirm `nvidia-smi` / smoke timings on the Spark via `telemetry:demo` and `comfy:smoke`.
 - Studio: timing table for LTX-2.5 text-to-video (resolutions × durations: seconds and peak memory) to set quotas and presets.
 - Studio: export API-format graphs with titled nodes for Klein text-to-image, edit, multi-reference and for the three LTX video modes; confirm size handling for edits.
 - Studio: product name, department list for signup, retention period, daily budgets.

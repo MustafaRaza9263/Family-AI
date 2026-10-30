@@ -12,7 +12,10 @@ const envSchema = z.object({
   /** Dev-only browser origin allowed for credentialed CORS. */
   CORS_ORIGIN: z.url().optional(),
   DATA_DIR: z.string().min(1).default('./data'),
-  COMFY_URL: z.url().optional(),
+  /** ComfyUI HTTP base; WebSocket uses the same host with /ws. */
+  COMFY_URL: z.url().default('http://127.0.0.1:8188'),
+  /** Folder of recipe subfolders (manifest.json + workflow.api.json). */
+  RECIPES_DIR: z.string().min(1).default('./recipes'),
   /**
    * Explicit enum — z.coerce.boolean() treats the string "false" as true.
    */

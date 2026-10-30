@@ -16,7 +16,11 @@ export type RunEvent =
       nodeTitle?: string;
       at: Date;
     }
-  | { type: 'nodes_cached'; nodeIds: string[]; at: Date };
+  | {
+      type: 'nodes_cached';
+      nodes: { nodeId: string; nodeClass: string; nodeTitle?: string }[];
+      at: Date;
+    };
 
 export type RunEnd = {
   status: RunStatus;

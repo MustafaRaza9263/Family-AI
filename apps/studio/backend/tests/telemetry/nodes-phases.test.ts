@@ -41,16 +41,25 @@ describe('node durations', () => {
     ]);
   });
 
-  it('records cached nodes as 0 ms', () => {
+  it('records cached nodes as 0 ms with class and title', () => {
     const tracker = createNodeTracker();
     applyRunEvent(tracker, {
       type: 'nodes_cached',
-      nodeIds: ['1', '2'],
+      nodes: [
+        { nodeId: '1', nodeClass: 'CLIPLoader', nodeTitle: 'Load CLIP' },
+        { nodeId: '2', nodeClass: 'VAELoader' },
+      ],
       at: new Date(0),
     });
     expect(tracker.nodes).toEqual([
-      { nodeId: '1', class: '', ms: 0, cached: true },
-      { nodeId: '2', class: '', ms: 0, cached: true },
+      {
+        nodeId: '1',
+        class: 'CLIPLoader',
+        title: 'Load CLIP',
+        ms: 0,
+        cached: true,
+      },
+      { nodeId: '2', class: 'VAELoader', ms: 0, cached: true },
     ]);
   });
 });

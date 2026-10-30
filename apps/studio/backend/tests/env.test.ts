@@ -39,4 +39,13 @@ describe('loadEnv', () => {
     expect(env.TELEMETRY_SAMPLE_INTERVAL_MS).toBe(1000);
     expect(env.TELEMETRY_RETENTION_DAYS).toBe(90);
   });
+
+  it('defaults ComfyUI URL and recipes dir', () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb://mongoadmin:test@127.0.0.1:27017/studio?authSource=admin',
+    });
+    expect(env.COMFY_URL).toBe('http://127.0.0.1:8188');
+    expect(env.RECIPES_DIR).toBe('./recipes');
+  });
 });

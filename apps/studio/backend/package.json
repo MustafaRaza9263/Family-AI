@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "seed:admin": "tsx --env-file=.env scripts/seed-admin.ts",
-    "telemetry:demo": "tsx --env-file=.env scripts/telemetry-demo.ts"
+    "telemetry:demo": "tsx --env-file=.env scripts/telemetry-demo.ts",
+    "comfy:smoke": "tsx --env-file=.env scripts/comfy-smoke.ts"
   },
   "dependencies": {
     "@studio/shared": "*",
