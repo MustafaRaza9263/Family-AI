@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "seed:admin": "tsx --env-file=.env scripts/seed-admin.ts"
+    "seed:admin": "tsx --env-file=.env scripts/seed-admin.ts",
+    "telemetry:demo": "tsx --env-file=.env scripts/telemetry-demo.ts"
   },
   "dependencies": {
     "@studio/shared": "*",

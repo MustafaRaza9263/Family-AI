@@ -13,6 +13,15 @@ const envSchema = z.object({
   CORS_ORIGIN: z.url().optional(),
   DATA_DIR: z.string().min(1).default('./data'),
   COMFY_URL: z.url().optional(),
+  /**
+   * Explicit enum — z.coerce.boolean() treats the string "false" as true.
+   */
+  TELEMETRY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  TELEMETRY_SAMPLE_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+  TELEMETRY_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
 });
 
 export type Env = z.infer<typeof envSchema>;

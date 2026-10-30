@@ -20,4 +20,23 @@ describe('loadEnv', () => {
   it('throws a clear error when required fields are missing', () => {
     expect(() => loadEnv({ NODE_ENV: 'test' })).toThrow(/Invalid environment/);
   });
+
+  it('treats TELEMETRY_ENABLED="false" as false (not coerced true)', () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb://mongoadmin:test@127.0.0.1:27017/studio?authSource=admin',
+      TELEMETRY_ENABLED: 'false',
+    });
+    expect(env.TELEMETRY_ENABLED).toBe(false);
+  });
+
+  it('defaults telemetry flags when unset', () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb://mongoadmin:test@127.0.0.1:27017/studio?authSource=admin',
+    });
+    expect(env.TELEMETRY_ENABLED).toBe(true);
+    expect(env.TELEMETRY_SAMPLE_INTERVAL_MS).toBe(1000);
+    expect(env.TELEMETRY_RETENTION_DAYS).toBe(90);
+  });
 });

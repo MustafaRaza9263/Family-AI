@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-10-28
+> Last updated: 2026-10-30
 
 ## 1. What this is
 
@@ -53,15 +53,16 @@ company-ai/
 │   │   │   └── .env.example
 │   │   └── frontend/       Next.js App Router (static export → out/)
 │   │       └── src/        app · components/{ui,layout,auth,chat,rich,admin} · hooks · lib
-│   └── studio/             npm workspaces: shared · backend · frontend
+│   └── studio/             npm workspaces: shared · backend · frontend (full tree in §8.13)
 │       ├── shared/         Zod schemas + types used by both sides (@studio/shared, built to dist/)
 │       ├── backend/
-│       │   ├── src/        config · routes · controllers · services · comfy · queue · db · middleware · lib
+│       │   ├── src/        config · routes · controllers · services · db · middleware · lib · telemetry · comfy (empty) · queue (empty)
 │       │   ├── recipes/<id>/   manifest.json · workflow.api.json   (one folder per recipe)
+│       │   ├── scripts/    seed-admin · telemetry-demo
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
-│           └── src/        app · components/{ui,layout,tool-form,results} · features/{auth,create,library,admin} · hooks · lib
+│           └── src/        app · components/{ui,layout} · features/{auth,admin} · lib  (create/library/tool-form planned)
 ├── infra/
 │   ├── vllm/               docker-compose.yml · .env.example
 │   └── comfyui/            Dockerfile · docker-compose.yml · workflows/ (UI-format originals) · .env (gitignored)
@@ -219,6 +220,7 @@ Rules:
 - `usage_daily`: userId, day, jobs, gpuSeconds.
 - `audit_logs`: admin actions, including every admin view of another user's generations.
 - `settings`: single document (engine paused, limits overrides).
+- `job_metrics`: per-generation telemetry row (section 8.12). Written by the telemetry module when wired; TTL via `TELEMETRY_RETENTION_DAYS` (default 90). Not yet written by the queue.
 
 ### 8.7 API surface (`/api`)
 
@@ -253,12 +255,101 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.11 Run and status
 
-- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others.
-- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (`http://127.0.0.1:8188` in dev, `http://comfyui:8188` in compose), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `DATA_DIR`. All validated with Zod at boot.
+- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo`.
+- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (`http://127.0.0.1:8188` in dev, `http://comfyui:8188` in compose), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`. All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`).
 - **Storage:** results under `DATA_DIR/<userId>/`, served only to the owner (and admins, audited). Retention 30 days by default.
-- **Status (2026-10-28):** ComfyUI isolation done and verified; workspace scaffold, dependencies and empty folder structure created; Z-Image workflow exported in API format. No Studio application code yet.
-- **Test approach:** no fake ComfyUI server for now. Unit tests cover the recipe resolver, graph patching, quotas and queue ordering behind a small client interface. Real behavior is checked with a `smoke` script against the real engine.
-- **Next:** backend ComfyUI client and `image-create-fast` end to end → queue and SSE → auth and approvals → frontend design system and screens → Klein edit/reference recipes → LTX video recipes.
+- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin user approval live (backend + frontend); shared Zod schemas for auth/admin; Z-Image `image-create-fast` workflow exported (API format). Self-contained **telemetry module** exists under `src/telemetry/` (unit-tested; demo script); **not wired** to routes, queue or ComfyUI yet. `comfy/` and `queue/` folders are empty placeholders.
+- **Test approach:** no fake ComfyUI server for now. Unit tests cover auth, sessions, admin, env, and telemetry (parsers, phases, aggregates, never-throw API, sampler refcount) with injectable clock/sampler/store. Real GPU sampling is checked with `npm run telemetry:demo` on the Spark.
+- **Next:** wire telemetry when the queue runs jobs → backend ComfyUI client and `image-create-fast` end to end → queue and SSE → frontend create/library screens → Klein edit/reference recipes → LTX video recipes.
+
+### 8.12 Telemetry (per-job metrics)
+
+Self-contained module at `apps/studio/backend/src/telemetry/`. Callers pass plain data; it must not import ComfyUI, recipes, Express or queue code (only `type Logger` and `Clock` from `src/lib`). Public API: `createTelemetry({ store, sampler, logger, clock?, config? })` → `runStart` / `runEvent` / `runEnd` / `flush`. Fire-and-forget, never throws; `flush` waits for in-flight saves and stops the sampler. Disabled when `TELEMETRY_ENABLED=false` (no-op functions).
+
+**One row per finished job** (`job_metrics`), fields:
+
+| Area | Fields | Meaning |
+|---|---|---|
+| Identity | `jobId`, `userId`, `recipeId`, `tool` (`image`\|`video`) | Which job, who, which recipe |
+| Outcome | `status`, `errorCode?` | `done` / `failed` / `cancelled` |
+| Wall time | `queuedAt`, `startedAt`, `finishedAt`, `queueWaitMs`, `runMs` | Wait in queue vs actual run length |
+| Output | `output?` (`width`, `height`, `frames`, `bytes`) | Result size when known |
+| Nodes | `nodes[]` (`nodeId`, `class`, `title?`, `ms`, `cached`) | Per-step duration; cached steps are 0 ms (ComfyUI runs these graphs one node at a time) |
+| Phases | `loadMs`, `sampleMs`, `decodeMs`, `otherMs` | Node times rolled into load / sample / decode / other (class regex table in `phases.ts`; verify against real graphs when wiring) |
+| Hardware | `samples`, GPU util/power/temp avg&peak, mem used/available/swap, `memTotalMb`, `gpuAvailable` | Summaries from ~1s samples (+ start/end); raw series not stored. GPU via long-lived `nvidia-smi`; memory via `/proc/meminfo` (Total−Available). Nulls when unavailable |
+| Meta | `createdAt` | Insert time; TTL index uses retention days |
+
+**Stores:** `MemoryMetricsStore` (tests/demo) · `MongoMetricsStore` (injected `Collection`; `ensureIndexes()` for unique `jobId`, `finishedAt`, `{recipeId,finishedAt}`, TTL on `createdAt` — call from boot later, not yet). **Demo:** `npm run telemetry:demo` → `scripts/telemetry-demo.ts` (fake ~5s run, real `SystemSampler`, prints JSON after `flush`).
+
+### 8.13 Studio layout on disk (current)
+
+```
+apps/studio/
+├── package.json · package-lock.json · .prettierrc.json
+├── shared/                         (@studio/shared)
+│   ├── package.json · tsconfig.json
+│   └── src/
+│       ├── index.ts · brand.ts
+│       └── schemas/   auth.ts · admin.ts · user.ts · error.ts
+├── backend/                        (@studio/backend)
+│   ├── package.json · tsconfig.json · tsconfig.build.json
+│   ├── eslint.config.mjs · vitest.config.ts · .env.example
+│   ├── recipes/
+│   │   └── image-create-fast/
+│   │       └── workflow.api.json   (manifest.json still to add)
+│   ├── scripts/
+│   │   ├── seed-admin.ts
+│   │   └── telemetry-demo.ts
+│   ├── src/
+│   │   ├── server.ts · app.ts
+│   │   ├── config/env.ts
+│   │   ├── routes/        auth.routes.ts · admin.routes.ts · health.routes.ts
+│   │   ├── controllers/   auth · admin-users · health
+│   │   ├── services/      auth · session · admin-users
+│   │   ├── middleware/    session · require-auth · validate · security · origin-check
+│   │   │                  rate-limits · request-logger · error-handler · not-found
+│   │   ├── db/            mongo.ts · indexes.ts · documents.ts
+│   │   │   └── repositories/  user · session · mongo-user · mongo-session
+│   │   ├── lib/           logger · clock · errors · password · session-token
+│   │   │                  public-user · escape-regex
+│   │   ├── types/express.d.ts
+│   │   ├── telemetry/              (self-contained; not wired yet)
+│   │   │   ├── index.ts · create-telemetry.ts · types.ts · schema.ts
+│   │   │   ├── config.ts · persist.ts · run-tracker.ts
+│   │   │   ├── nodes.ts · phases.ts · aggregates.ts
+│   │   │   ├── sampler/   types · system-sampler · default-spawn
+│   │   │   │              nvidia-smi · meminfo
+│   │   │   └── store/     types · memory-store · mongo-store
+│   │   ├── comfy/                  (empty — ComfyUI client next)
+│   │   └── queue/                  (empty — job worker next)
+│   └── tests/
+│       ├── auth · session · admin · password · env · origin-and-errors
+│       ├── helpers/test-app.ts
+│       ├── fakes/         memory-user-repository · memory-session-repository
+│       └── telemetry/     nvidia-smi · meminfo · nodes-phases · aggregates
+│                          create-telemetry · system-sampler · helpers
+│                          fixtures/meminfo.txt
+└── frontend/                       (@studio/frontend)
+    ├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs
+    ├── AGENTS.md · README.md
+    ├── public/            (default Next placeholders)
+    └── src/
+        ├── app/
+        │   ├── layout.tsx · providers.tsx · globals.css · not-found.tsx
+        │   ├── (auth)/    login/page · register/page · layout
+        │   └── (app)/     layout · page · admin/users/page
+        ├── components/
+        │   ├── layout/    app-shell · brand-mark · page-header · theme-toggle · user-menu
+        │   └── ui/        button · input · field · card · badge · avatar · spinner
+        │                  skeleton · toaster · dropdown-menu · confirm-dialog · password-input
+        ├── features/
+        │   ├── auth/      api · hooks · schemas · login-form · register-form
+        │   │              register-success · auth-guard · require-admin
+        │   └── admin/     api · hooks · users-page · users-table · user-card-list
+        │                  user-actions · status-tabs
+        ├── lib/           api-client · query-client · cn · format
+        └── hooks/         (empty — planned)
+```
 
 ## 9. Deployment and serving
 
@@ -279,12 +370,12 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ## 10. Engineering practices
 
-- **Layers:** routes (URL → controller) → controllers (HTTP only) → services (logic) → guardrails (judge input/output). One file, one job; aim for ≤150 lines. Studio adds `comfy/` (the only code that speaks to ComfyUI) and `queue/` (the only code that picks and runs jobs).
-- **Safety:** TypeScript `strict`, no `any`; Zod validation at every boundary (env, request bodies, recipe manifests). Studio shares schemas between backend and frontend through `@studio/shared`.
+- **Layers:** routes (URL → controller) → controllers (HTTP only) → services (logic) → guardrails (judge input/output). One file, one job; aim for ≤150 lines. Studio adds `comfy/` (the only code that speaks to ComfyUI), `queue/` (the only code that picks and runs jobs), and `telemetry/` (per-job metrics; no Comfy/Express imports).
+- **Safety:** TypeScript `strict`, no `any`; Zod validation at every boundary (env, request bodies, recipe manifests, telemetry rows). Studio shares schemas between backend and frontend through `@studio/shared`.
 - **Readability:** explicit names; comments explain *why*; no clever abstractions. A junior should follow every line.
 - **Config:** only through validated env; `.env.example` committed; secrets never in Git.
 - **Errors and logs:** typed errors, one central handler, one JSON error shape; pino JSON logs with request ID; never log passwords.
-- **Tests:** Vitest for guards, prompt builder, auth, recipe resolver, graph patching and quotas, with the LLM and ComfyUI behind injectable interfaces.
+- **Tests:** Vitest for guards, prompt builder, auth, recipe resolver, graph patching, quotas and telemetry, with the LLM and ComfyUI behind injectable interfaces.
 - **Style:** ESLint + Prettier; Conventional Commits (`feat:`, `fix:`, `chore:`); npm (not pnpm); npm workspaces inside `apps/studio`.
 - **Versioned content:** system prompts, knowledge packs and ComfyUI recipes (workflow JSON + manifest) are files in Git, reviewed like code.
 - **Evals first:** golden questions (including out-of-scope and attack questions) run on every model, prompt or data change. Benchmark TTFT, tokens/sec and p50/p95 latency before launch. For Studio, a timing table per recipe and preset (seconds and peak memory) sets the quotas.
@@ -333,6 +424,7 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 - Domain name for Cloudflare Tunnel.
 - Backup target for MongoDB (bot and Studio) and Studio files.
 - Final model choice via evals.
+- Studio: wire telemetry into the job worker (`runStart` / node events / `runEnd` + `MongoMetricsStore.ensureIndexes` at boot); confirm `nvidia-smi` fields on the Spark via `telemetry:demo`.
 - Studio: timing table for LTX-2.5 text-to-video (resolutions × durations: seconds and peak memory) to set quotas and presets.
 - Studio: export API-format graphs with titled nodes for Klein text-to-image, edit, multi-reference and for the three LTX video modes; confirm size handling for edits.
 - Studio: product name, department list for signup, retention period, daily budgets.

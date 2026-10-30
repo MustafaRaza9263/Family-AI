@@ -16,7 +16,7 @@ export type TestContext = {
 };
 
 export async function buildTestApp(
-  overrides: Partial<Env> = {},
+  overrides: NodeJS.ProcessEnv = {},
 ): Promise<TestContext> {
   const env = loadEnv({
     NODE_ENV: 'test',
@@ -29,7 +29,7 @@ export async function buildTestApp(
     DATA_DIR: './data',
     CORS_ORIGIN: 'http://localhost:3001',
     ...overrides,
-  } as NodeJS.ProcessEnv);
+  });
 
   const users = new MemoryUserRepository();
   const sessions = new MemorySessionRepository();
