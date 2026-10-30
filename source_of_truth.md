@@ -12,7 +12,7 @@ On-premise AI assistants and creative tools for the company, powered by one self
 | 1 | `seven-towers-bot` | Q&A on the Seven Towers project from ≤10 pages of company data, for the public (prospective buyers). Proof of concept | In development |
 | 2 | `hub-bot` | Bosses-only assistant over the cloud CRM / EMS / HR / CMS via tool calling | Planned |
 | 3 | `social-bot` | Replies to WhatsApp / social comments / app reviews, human approval for decisions | Planned |
-| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Queue + Comfy + telemetry wired; create HTTP/UI next |
+| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Queue + Comfy + telemetry + HTTP API live; create UI next |
 
 Build order: 1 → 2 → 3. `studio` is a parallel track and shares the GPU with bot 1.
 
@@ -58,7 +58,7 @@ company-ai/
 │       ├── backend/
 │       │   ├── src/        compose · config · routes · controllers · services · db · middleware · lib · telemetry · comfy · queue · events · limits
 │       │   ├── recipes/<id>/   manifest.json · workflow.api.json   (one folder per recipe)
-│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke · queue-smoke
+│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke · queue-smoke · api-smoke
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
@@ -147,16 +147,16 @@ Staff (marketing first) generate images and videos from one simple branded app. 
 
 ### 8.2 How a request flows
 
-1. Caller (today: `GenerationService` / `queue:smoke`; later: `POST /api/threads/:id/generations`) validates input, checks quotas and reserves a daily run (section 8.5).
-2. Local **recipe resolver** (`pick-recipe.ts`) picks the recipe from tool + attachments + variant (section 8.3). The user never chooses a workflow. Missing recipe → `UNSUPPORTED_COMBINATION`.
-3. A `jobs` document is saved as `queued`; the event hub publishes `job.queued` with position; the worker is woken.
+1. Caller (`POST /api/threads/:id/generations`, or `GenerationService` / `queue:smoke`) validates input, checks quotas and reserves a daily run (section 8.5).
+2. **Recipe resolver** (`pick-recipe.ts`) uses shared `pickMode` against each recipe’s `match` (tool + input image count + optional variant). The user never chooses a workflow. Missing recipe → `UNSUPPORTED_COMBINATION`.
+3. A `jobs` document is saved as `queued`; the event hub publishes `job.queued` with position; the worker is woken. Empty thread titles are set from the first prompt (60 chars).
 4. A single worker loop claims the next eligible job when the engine is ready and not paused.
 5. The ComfyUI client copies the recipe graph in memory, sets allowed values by node title, a **fresh random seed** and `filename_prefix`, then `POST /prompt`.
 6. One persistent WebSocket delivers progress; the worker maps node class → UI stage and publishes `job.progress` (never node/class/recipe names). Telemetry gets `runStart` / `runEvent` / `runEnd`.
 7. On success: bytes → `DATA_DIR/<userId>/<assetId>.png`, WebP thumb (sharp, max 512 px), `assets` insert, job `done`, `job.done`, `usage_daily.gpuSeconds` += runMs/1000.
 8. On failure/cancel: map to job `errorCode`, refund when the rules say so, publish `job.failed` / `job.cancelled`.
 
-HTTP routes for generate / events / files are **not wired yet**; services + hub are callable in-process. Why it stays fast: in-memory graph patch; one WebSocket; warm-up at boot; no LLM hop.
+HTTP adapters for generate / events / files / library / capabilities / admin jobs·runs·engine·settings are wired (section 8.7). Why it stays fast: in-memory graph patch; one WebSocket; warm-up at boot; no LLM hop.
 
 ### 8.3 One pipeline for create and edit
 
@@ -185,10 +185,11 @@ Rules:
 
 ### 8.4 Recipes (the ComfyUI contract)
 
-- One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (the "Export (API)" file from ComfyUI) and `manifest.json` (id, tool `image`|`video`, `timeoutSeconds`, params with text/enum targets, seed target, output title + prefix field). Path from env `RECIPES_DIR` (default `./recipes`).
+- One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (the "Export (API)" file from ComfyUI) and `manifest.json` (id, tool `image`|`video`, `timeoutSeconds`, **`match`** `{ tool, inputImages:{min,max}, variant? }`, params with text/enum targets + presentation fields, seed target, output title + prefix field). Path from env `RECIPES_DIR` (default `./recipes`).
+- **Match + presentation:** each param has `label`, optional lucide `icon` (kebab-case), `group` `primary`|`settings`; enum options have `label` and optional `icon`. `sizes` and `target` stay server-only and never appear in `GET /capabilities`. Boot rejects overlapping `(tool, imageCount, variant)` matches; when several variants cover the same image count, exactly one must have `default: true`.
 - **Nodes are found by title, never by id.** Title convention: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `OUT_IMAGE`, `OUT_VIDEO`. Node ids are opaque strings (e.g. `"57:8"`). At boot `loadRecipes` validates both JSON files with Zod, builds a title → nodeId index, and refuses to start if any manifest title is missing, duplicated, or missing a target input field.
 - Everything not in the manifest stays locked in the file (steps, cfg, sampler, models, `batch_size`). `patchGraph` structuredClones the stored graph, writes only allowed params, fills enum defaults, sets a fresh random seed (`crypto.randomInt`, below 2**48) and `filename_prefix = studio/<jobId>`, and returns resolved values (e.g. width/height). It never mutates the recipe on disk.
-- `image-create-fast` (Z-Image-Turbo) is live: both `manifest.json` and `workflow.api.json` are in Git.
+- `image-create-fast` (Z-Image-Turbo) is live: `match` `{ tool:image, inputImages:{0,0}, variant:{id:fast,label:"Fast",icon:zap,default:true} }`; aspect ratio options Square 1:1 / Portrait 4:5 / Landscape 16:9 / Story 9:16.
 
 | Title | Class | Backend writes |
 |---|---|---|
@@ -215,7 +216,7 @@ Self-contained module; the only Studio code that talks to ComfyUI. Must not impo
 
 #### 8.5.1 Composition root (`src/compose.ts`)
 
-`compose()` builds and returns everything: validated env, logger, Mongo, `ensureIndexes` for all collections, `MongoMetricsStore.ensureIndexes()`, repositories, `createComfy`, telemetry (Mongo store + `SystemSampler`), event hub, `LimitsService`, queue worker, `GenerationService`. `server.ts` calls `compose()`, starts the HTTP app, `worker.start()`, and on SIGTERM/SIGINT: stop claims → wait up to 30 s for the running job → `telemetry.flush()` → `comfy.close()` → hub close → `closeMongo()`.
+`compose()` builds and returns everything: validated env, logger, Mongo, `ensureIndexes` for all collections (including `audit_logs`), `MongoMetricsStore.ensureIndexes()`, repositories, `createComfy`, telemetry (Mongo store + `SystemSampler`), event hub, `LimitsService`, queue worker, `GenerationService`, and HTTP services (`CapabilitiesService`, `ThreadService`, `GenerationQueryService`, `FilesService`, `LibraryService`, `AdminStudioService`) as `api`. `server.ts` calls `compose()`, passes `api` into `createApp`, starts `worker.start()`, and on SIGTERM/SIGINT: stop claims → wait up to 30 s for the running job → `telemetry.flush()` → `comfy.close()` → hub close → `closeMongo()`.
 
 #### 8.5.2 Limits (`src/limits/`)
 
@@ -231,7 +232,7 @@ Self-contained module; the only Studio code that talks to ComfyUI. Must not impo
 
 - **Scheduler** (`scheduler.ts`, pure): `orderQueue(queued, lastServedAt)` → images before videos; within a tool band, least-recently-served user first (round-robin); within a user, oldest `timings.queuedAt` first. Index 0 is next; index+1 is the 1-based SSE position.
 - **One worker loop** (`worker.ts`): woken by an EventEmitter or a 2 s timer. Sets `busy` before any await so overlapping wakes cannot double-claim. Skips while `settings.enginePaused` or engine ping state is `unavailable`. Claims atomically (`queued` → `running`, `attempts++`).
-- **Engine monitor** (`engine-state.ts`): ping every `ENGINE_PING_INTERVAL_MS` (default 10_000) → `ready` | `unavailable`; `paused` overlays from settings; publishes `engine` events.
+- **Engine monitor** (`engine-state.ts`): ping every `ENGINE_PING_INTERVAL_MS` (default 10_000) → `ready` | `unavailable`; `paused` overlays from settings; publishes `engine` events. Admin `PATCH /admin/engine` calls `setPaused` immediately (does not wait for the next ping) and wakes the worker.
 - **Run** (`run-job.ts`): `Map<jobId, AbortController>` for cancel; `comfy.run` with hooks → telemetry + hub. Stage from node class (`stage.ts`): `Sampler` → `generating`, `VAEDecode`/`Save*` → `finishing`, else `preparing`. Success writes file + sharp WebP thumb (`write-output.ts`), inserts asset, finishes job. Telemetry/publish failures never break the loop.
 - **Cancel** (`cancel.ts`): queued → `cancelled` immediately + refund; running → abort controller (Comfy `/interrupt`), ends as `cancelled` (no refund).
 - **Recovery** (`recovery.ts`) at boot for each `running` job: history has output → `comfy.collect` + finish `done`; Comfy still holds the prompt → interrupt/clear + requeue; else requeue if `attempts < 2`, otherwise fail `ENGINE_FAILED` + refund. If Comfy is unreachable, leave jobs alone (worker will not claim while unavailable).
@@ -255,15 +256,16 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 | `job.cancelled` | `jobId` |
 | `engine` | `state` (`ready`\|`paused`\|`unavailable`) |
 
-`GET /api/events` HTTP adapter is not wired yet.
+`GET /api/events` HTTP adapter: auth required; `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`; hub heartbeat → SSE comment; unsubscribe on close.
 
-#### 8.5.5 Generation service (no HTTP yet)
+#### 8.5.5 Generation service
 
-`GenerationService.createGeneration(userId, threadId, input)`: Zod-validate `{ tool, prompt, values, variant?, inputAssetIds }` → `pickRecipe` against loaded recipes (SOT table in 8.3; only `image-create-fast` exists on disk today) → `checkSubmit` → `reserveRun` → insert job → wake worker → `job.queued`. Unsupported attachment/recipe combo → `UNSUPPORTED_COMBINATION`.
+`GenerationService.createGeneration(userId, threadId, input)`: Zod-validate `{ tool, prompt, values, variant?, inputAssetIds }` → `pickRecipe` / `pickMode` against loaded recipe `match` fields (SOT table in 8.3; only `image-create-fast` exists on disk today) → `checkSubmit` → `reserveRun` → insert job → wake worker → `job.queued`. Unsupported attachment/recipe combo → `UNSUPPORTED_COMBINATION`. HTTP wraps this via `GenerationQueryService` (202 + `toUserJob`, cancel via `worker.cancel`, first-prompt thread title).
 
 #### 8.5.6 Smoke
 
-`npm run queue:smoke` → `scripts/queue-smoke.ts`: real Mongo + real engine; two throwaway users; A×3 + B×1 via `GenerationService`; prints queue order, every hub event, final statuses, `job_metrics` (including `warm`); deletes users/files; exits by itself. Stop any other Studio backend (`dev`) first so two workers do not share the queue.
+- `npm run queue:smoke` → `scripts/queue-smoke.ts`: real Mongo + real engine; two throwaway users; A×3 + B×1 via `GenerationService`; prints queue order, every hub event, final statuses, `job_metrics` (including `warm`); deletes users/files; exits by itself. Stop any other Studio backend (`dev`) first so two workers do not share the queue.
+- `npm run api:smoke` → `scripts/api-smoke.ts`: against a running server (`http://127.0.0.1:4001`); `SMOKE_EMAIL` / `SMOKE_PASSWORD`; login → capabilities → create thread → one generation → SSE until `job.done` → download file → print summary → exit.
 
 ### 8.6 Data model (MongoDB, database `studio`)
 
@@ -273,23 +275,27 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 - `jobs`: userId, threadId, tool (`image`\|`video`), recipeId, variant?, status `queued`\|`running`\|`done`\|`failed`\|`cancelled`, prompt, params (validated user-facing values), inputAssetIds, outputAssetIds, parentAssetId?, comfyPromptId?, errorCode?, attempts, timings `{ queuedAt, startedAt?, finishedAt? }`. Indexes: `{ status, tool, timings.queuedAt }`, `{ userId, status }`, `{ threadId }`.
 - `assets`: userId, threadId?, jobId?, kind `image`\|`video`, filePath, thumbPath, mime, bytes, width, height, durationSec?, source `upload`\|`generated`, parentAssetId?, createdAt, deletedAt?.
 - `usage_daily`: userId, day (`YYYY-MM-DD` in `STUDIO_TIMEZONE`), tool, runs, gpuSeconds. Unique index `{ userId, day, tool }`.
-- `audit_logs`: admin actions (planned for generation views).
+- `audit_logs`: admin actions (e.g. admin viewing another user’s non-thumb asset via `GET /files/:id`).
 - `settings`: singleton document `{ enginePaused, limits }` (dailyRuns / perUserRunning / perUserQueued / globalQueued overrides).
 - `job_metrics`: per-generation telemetry row (section 8.12). Written by the worker via telemetry; TTL via `TELEMETRY_RETENTION_DAYS` (default 90). Indexes ensured at boot.
 
 ### 8.7 API surface (`/api`)
 
+Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Minimal Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; admin job DTO includes `recipeId`. Capabilities are built from loaded recipes (new recipe folder → new mode, no route change); serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words.
+
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/logout` · `GET /me` |
-| Capabilities | `GET /capabilities` (offered presets, limits, remaining quota) |
-| Threads | `POST /threads` · `GET /threads` · `GET /threads/:id` · `DELETE /threads/:id` |
-| Generate | `POST /threads/:id/generations` · `GET /generations/:id` · `DELETE /generations/:id` (cancel) — **service ready, HTTP not wired** |
+| Capabilities | `GET /capabilities` (product, engine state, tools/modes/controls, per-tool quota remaining, activeCap) |
+| Threads | `POST /threads` · `GET /threads` (cursor, newest first) · `GET /threads/:id` (thread + items `[{job,assets}]`) · `DELETE /threads/:id` (soft delete + unlink asset files) |
+| Generate | `POST /threads/:id/generations` (202 + job; rate limit 30/min/user) · `GET /generations/:id` · `DELETE /generations/:id` (cancel) |
 | Uploads | `POST /uploads` (images; validated and re-encoded) — not wired |
-| Live | `GET /events` (SSE; event shapes in `@studio/shared`) — **hub ready, HTTP not wired** |
-| Files | `GET /files/:assetId` (`?thumb=1`) — owner or admin only |
-| Library | `GET /library` (paginated, filter by kind) |
-| Admin | `GET/PATCH /admin/users` · `GET /admin/jobs` · `GET/PATCH /admin/engine` (pause) · `GET /admin/stats` |
+| Live | `GET /events` (SSE; event shapes in `@studio/shared`) |
+| Files | `GET /files/:assetId` (`?thumb=1`, `?download=1`; `Cache-Control: private, immutable`; path from DB only) · `DELETE /assets/:id` (owner or admin) |
+| Library | `GET /library?kind=image\|video&cursor&limit` (own, not deleted) |
+| Admin | `GET/PATCH /admin/users` · `GET /admin/jobs` · `GET /admin/runs` · `GET /admin/runs/:jobId` · `GET/PATCH /admin/engine` · `GET/PATCH /admin/settings` |
+
+Production static serve: `apps/studio/frontend/out` via `mountFrontendStatic` (trailingSlash page fallbacks, no SPA catch-all over `/api`, CSP as in §8.10 / helmet).
 
 ### 8.8 Accounts
 
@@ -310,12 +316,12 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.11 Run and status
 
-- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke`.
-- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`, `STUDIO_TIMEZONE` (IANA, default UTC), `RETENTION_DAYS` (default 30), `ENGINE_PING_INTERVAL_MS` (default 10000). All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`).
+- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke` · `npm run api:smoke`.
+- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`, `STUDIO_TIMEZONE` (IANA, default UTC), `RETENTION_DAYS` (default 30), `ENGINE_PING_INTERVAL_MS` (default 10000). All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`). Smoke: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, optional `SMOKE_BASE_URL`.
 - **Storage:** results under `DATA_DIR/<userId>/` (PNG + `.thumb.webp`); retention soft-delete after `RETENTION_DAYS`. Smoke PNGs under `./tmp/smoke/` (gitignored; not product storage). Dependency: `sharp` (linux-arm64 prebuilt) for thumbnails.
-- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin live; Comfy client + `image-create-fast` live; **job pipeline live** (`compose`, limits, scheduler/worker, recovery, warm-up, retention, event hub, `GenerationService`, telemetry wired from the worker with `MongoMetricsStore.ensureIndexes` at boot). Shared Zod schemas include auth/admin/errors/events. **Not yet:** HTTP routes for generations / SSE / files / library / capabilities; frontend create/library screens; Klein/LTX recipes.
-- **Test approach:** no fake ComfyUI HTTP server. Unit tests: auth, sessions, admin, env, telemetry, comfy, scheduler ordering, limits (reserve/refund/concurrency/`checkSubmit` codes), worker happy path + cancel + recovery + pause + warm-up + retention, hub max connections + heartbeat, `pickRecipe`. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke` and `queue:smoke` on the Spark (stop `dev:backend` before `queue:smoke`).
-- **Next:** HTTP generate/events/files/capabilities routes → frontend create/library screens → Klein edit/reference recipes → LTX video recipes → move `pickRecipe` into `@studio/shared` as `pickMode`.
+- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin live; Comfy client + `image-create-fast` live; job pipeline live; **HTTP public contract live** (capabilities, threads, generations, SSE `/events`, files, library, admin jobs/runs/engine/settings; `@studio/shared` DTOs + `pickMode`; static export serving with trailingSlash fallbacks). **Not yet:** frontend create/library screens; uploads; Klein/LTX recipes.
+- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy, manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke` on the Spark (stop extra workers before queue smoke; `api:smoke` needs `dev:backend` up).
+- **Next:** frontend create/library screens → Klein edit/reference recipes → LTX video recipes → uploads.
 
 ### 8.12 Telemetry (per-job metrics)
 
@@ -345,8 +351,9 @@ apps/studio/
 ├── shared/                         (@studio/shared)
 │   ├── package.json · tsconfig.json
 │   └── src/
-│       ├── index.ts · brand.ts
-│       └── schemas/   auth.ts · admin.ts · user.ts · error.ts · events.ts
+│       ├── index.ts · brand.ts · departments.ts · pick-mode.ts
+│       └── schemas/   auth · admin · admin-studio · user · error · events
+│                      capabilities · job · asset · thread · library · settings
 ├── backend/                        (@studio/backend)
 │   ├── package.json · tsconfig.json · tsconfig.build.json
 │   ├── eslint.config.mjs · vitest.config.ts · .env.example
@@ -358,20 +365,28 @@ apps/studio/
 │   │   ├── seed-admin.ts
 │   │   ├── telemetry-demo.ts
 │   │   ├── comfy-smoke.ts
-│   │   └── queue-smoke.ts
+│   │   ├── queue-smoke.ts
+│   │   └── api-smoke.ts
 │   ├── src/
 │   │   ├── server.ts · app.ts · compose.ts
 │   │   ├── config/env.ts
-│   │   ├── routes/        auth.routes.ts · admin.routes.ts · health.routes.ts
-│   │   ├── controllers/   auth · admin-users · health
-│   │   ├── services/      auth · session · admin-users · generation · pick-recipe
+│   │   ├── routes/        auth · admin · admin-studio · health · capabilities
+│   │   │                  threads · generations · events · files · library
+│   │   ├── controllers/   auth · admin-users · admin-studio · health
+│   │   │                  capabilities · threads · generations · events
+│   │   │                  files · library
+│   │   ├── services/      auth · session · admin-users · admin-studio
+│   │   │                  generation · generation-query · pick-recipe
+│   │   │                  capabilities · thread · files · library
+│   │   ├── mappers/       job · asset · thread · admin-run
 │   │   ├── middleware/    session · require-auth · validate · security · origin-check
 │   │   │                  rate-limits · request-logger · error-handler · not-found
+│   │   │                  frontend-static
 │   │   ├── db/            mongo.ts · indexes.ts · documents.ts
 │   │   │   └── repositories/  user · session · thread · job · asset · usage-daily
-│   │   │                      settings · mongo-* counterparts
+│   │   │                      settings · audit · mongo-* counterparts
 │   │   ├── lib/           logger · clock · errors · password · session-token
-│   │   │                  public-user · escape-regex
+│   │   │                  public-user · escape-regex · cursor · title-from-prompt
 │   │   ├── types/express.d.ts
 │   │   ├── limits/        defaults · day-key · limits.service
 │   │   ├── events/        hub.ts
@@ -390,17 +405,20 @@ apps/studio/
 │   │       ├── run-prompt.ts · run-prompt-handlers.ts
 │   │       ├── resolve-node.ts · collect-output.ts
 │   │       └── recipes/   manifest-schema · graph-schema · recipe
-│   │                      load-recipes · patch-graph
+│   │                      load-recipes · patch-graph · match-validation
 │   └── tests/
 │       ├── auth · session · admin · password · env · origin-and-errors
-│       ├── helpers/test-app.ts
+│       ├── helpers/test-app.ts · test-studio-app.ts
 │       ├── fakes/         memory-*-repository · fake-comfy · fake-comfy-client
+│       ├── routes/        studio-api
+│       ├── shared/        pick-mode
+│       ├── mappers/       job
 │       ├── telemetry/     …
-│       ├── comfy/         …
+│       ├── comfy/         … · match-validation
 │       ├── queue/         scheduler · worker
 │       ├── limits/        limits.service
 │       ├── events/        hub
-│       └── services/      pick-recipe
+│       └── services/      pick-recipe · capabilities
 └── frontend/                       (@studio/frontend)
     ├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs
     ├── AGENTS.md · README.md
