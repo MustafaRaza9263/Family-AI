@@ -87,9 +87,20 @@ async function main(): Promise<void> {
   await telemetry.flush();
   const row = await store.findByJobId(jobId);
   process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
+  if (row) {
+    process.stdout.write(
+      `summary job=${jobId} status=${row.status} warm=${row.warm} runMs=${row.runMs}\n`,
+    );
+  }
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+main()
+  .catch((err: unknown) => {
+    process.stderr.write(
+      `${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exit(1);
+  })
+  .then(() => {
+    process.exit(0);
+  });

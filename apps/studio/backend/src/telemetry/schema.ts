@@ -57,6 +57,11 @@ export const jobMetricsRowSchema = z.object({
   nodes: z.array(nodeTimingSchema),
   phases: phasesSchema,
   hardware: hardwareSummarySchema,
+  /**
+   * True when every node whose class matches /Loader/ was cached.
+   * Cold GPU weight cost shows up in encoder/sampler nodes, not loaders.
+   */
+  warm: z.boolean(),
   createdAt: z.date(),
 });
 

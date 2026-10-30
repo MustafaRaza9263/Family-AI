@@ -57,7 +57,11 @@ export function createFakeHttp(
       order.push('interrupt');
     },
     async queue() {
-      return { queue_running: [], queue_pending: [] };
+      return { running: [], pending: [] };
+    },
+    async clearPrompt(promptId: string) {
+      void promptId;
+      order.push('clearPrompt');
     },
   };
   return fake;

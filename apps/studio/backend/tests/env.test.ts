@@ -48,4 +48,14 @@ describe('loadEnv', () => {
     expect(env.COMFY_URL).toBe('http://127.0.0.1:8188');
     expect(env.RECIPES_DIR).toBe('./recipes');
   });
+
+  it('defaults studio timezone, retention and engine ping', () => {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      MONGODB_URI: 'mongodb://mongoadmin:test@127.0.0.1:27017/studio?authSource=admin',
+    });
+    expect(env.STUDIO_TIMEZONE).toBe('UTC');
+    expect(env.RETENTION_DAYS).toBe(30);
+    expect(env.ENGINE_PING_INTERVAL_MS).toBe(10_000);
+  });
 });

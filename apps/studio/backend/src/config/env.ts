@@ -25,6 +25,10 @@ const envSchema = z.object({
     .transform((value) => value === 'true'),
   TELEMETRY_SAMPLE_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
   TELEMETRY_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  /** IANA timezone for usage_daily day keys (YYYY-MM-DD). */
+  STUDIO_TIMEZONE: z.string().min(1).default('UTC'),
+  RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  ENGINE_PING_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

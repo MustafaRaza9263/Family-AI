@@ -11,6 +11,10 @@ export const apiErrorCodeSchema = z.enum([
   'NOT_FOUND',
   'RATE_LIMITED',
   'ORIGIN_NOT_ALLOWED',
+  'QUOTA_DAILY',
+  'QUOTA_ACTIVE',
+  'QUEUE_FULL',
+  'UNSUPPORTED_COMBINATION',
   'INTERNAL',
 ]);
 

@@ -2,11 +2,31 @@ import { z } from 'zod';
 import { EngineError, EngineErrorCodes } from './errors.js';
 import type { Logger } from '../lib/logger.js';
 import type { ApiGraph } from './recipes/graph-schema.js';
-import type { ComfyHistoryEntry, ComfyHttp, ComfyImageRef } from './types.js';
+import type {
+  ComfyHistoryEntry,
+  ComfyHttp,
+  ComfyImageRef,
+  ComfyQueueSnapshot,
+} from './types.js';
 
 const submitResponseSchema = z.object({
   prompt_id: z.string().min(1),
 });
+
+/** ComfyUI returns [number, promptId, ...] tuples in each queue list. */
+const queueResponseSchema = z.object({
+  queue_running: z.array(z.array(z.unknown())).default([]),
+  queue_pending: z.array(z.array(z.unknown())).default([]),
+});
+
+function promptIdsFromTuples(tuples: unknown[][]): string[] {
+  const ids: string[] = [];
+  for (const tuple of tuples) {
+    const id = tuple[1];
+    if (typeof id === 'string') ids.push(id);
+  }
+  return ids;
+}
 
 export type CreateComfyHttpOptions = {
   baseUrl: string;
@@ -113,7 +133,7 @@ export function createComfyHttp(opts: CreateComfyHttpOptions): ComfyHttp {
       await request('/interrupt', { method: 'POST' });
     },
 
-    async queue(): Promise<unknown> {
+    async queue(): Promise<ComfyQueueSnapshot> {
       const res = await request('/queue');
       if (!res.ok) {
         throw new EngineError(
@@ -121,7 +141,25 @@ export function createComfyHttp(opts: CreateComfyHttpOptions): ComfyHttp {
           'Image engine is unavailable',
         );
       }
-      return readJson(res);
+      const parsed = queueResponseSchema.safeParse(await readJson(res));
+      if (!parsed.success) {
+        throw new EngineError(
+          EngineErrorCodes.ENGINE_UNAVAILABLE,
+          'Image engine is unavailable',
+        );
+      }
+      return {
+        running: promptIdsFromTuples(parsed.data.queue_running),
+        pending: promptIdsFromTuples(parsed.data.queue_pending),
+      };
+    },
+
+    async clearPrompt(promptId: string): Promise<void> {
+      await request('/queue', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ delete: [promptId] }),
+      });
     },
   };
 }

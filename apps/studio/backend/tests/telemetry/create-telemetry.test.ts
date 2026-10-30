@@ -171,5 +171,37 @@ describe('createTelemetry', () => {
     ]);
     expect(row.phases.sampleMs).toBe(500);
     expect(row.runMs).toBe(700);
+    expect(row.warm).toBe(true);
+  });
+
+  it('sets warm false when a Loader node actually ran', async () => {
+    const clock = mutableClock();
+    const store = new MemoryMetricsStore();
+    const telemetry = createTelemetry({
+      store,
+      sampler: new FakeSampler(),
+      logger: silentLogger(),
+      clock,
+    });
+
+    telemetry.runStart('job-warm', {
+      userId: 'u1',
+      recipeId: 'r',
+      tool: 'image',
+      queuedAt: clock.now(),
+    });
+    clock.advance(50);
+    telemetry.runEvent('job-warm', {
+      type: 'node_start',
+      nodeId: '1',
+      nodeClass: 'UNETLoader',
+      at: clock.now(),
+    });
+    clock.advance(200);
+    telemetry.runEnd('job-warm', { status: 'done' });
+    await telemetry.flush();
+
+    const row = await store.findByJobId('job-warm');
+    expect(row?.warm).toBe(false);
   });
 });

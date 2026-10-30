@@ -12,7 +12,8 @@
     "test": "vitest run",
     "seed:admin": "tsx --env-file=.env scripts/seed-admin.ts",
     "telemetry:demo": "tsx --env-file=.env scripts/telemetry-demo.ts",
-    "comfy:smoke": "tsx --env-file=.env scripts/comfy-smoke.ts"
+    "comfy:smoke": "tsx --env-file=.env scripts/comfy-smoke.ts",
+    "queue:smoke": "tsx --env-file=.env scripts/queue-smoke.ts"
   },
   "dependencies": {
     "@studio/shared": "*",

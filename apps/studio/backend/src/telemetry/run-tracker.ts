@@ -47,6 +47,17 @@ export function trackSample(state: RunState, sample: HardwareSample): void {
   foldSample(state.hardware, sample);
 }
 
+const LOADER_CLASS = /Loader/;
+
+/** Warm when every Loader-class node was a cache hit (vacuous if none). */
+export function computeWarm(
+  nodes: { class: string; cached: boolean }[],
+): boolean {
+  return nodes
+    .filter((n) => LOADER_CLASS.test(n.class))
+    .every((n) => n.cached);
+}
+
 export function buildRow(
   state: RunState,
   end: RunEnd,
@@ -58,6 +69,7 @@ export function buildRow(
     state.startedAt.getTime() - state.meta.queuedAt.getTime(),
   );
   const runMs = Math.max(0, finishedAt.getTime() - state.startedAt.getTime());
+  const nodes = state.nodes.nodes;
   const row: JobMetricsRow = {
     jobId: state.jobId,
     userId: state.meta.userId,
@@ -69,9 +81,10 @@ export function buildRow(
     finishedAt,
     queueWaitMs,
     runMs,
-    nodes: state.nodes.nodes,
-    phases: computePhases(state.nodes.nodes),
+    nodes,
+    phases: computePhases(nodes),
     hardware: finalizeHardware(state.hardware),
+    warm: computeWarm(nodes),
     createdAt: finishedAt,
   };
   if (end.errorCode !== undefined) {

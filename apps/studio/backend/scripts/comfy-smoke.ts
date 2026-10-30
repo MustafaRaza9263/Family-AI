@@ -163,11 +163,17 @@ async function main(): Promise<void> {
     }
   }
 
-  comfy.close();
   await telemetry.flush();
+  comfy.close();
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+main()
+  .catch((err: unknown) => {
+    process.stderr.write(
+      `${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exit(1);
+  })
+  .then(() => {
+    process.exit(0);
+  });

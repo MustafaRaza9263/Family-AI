@@ -1,15 +1,11 @@
-import { loadEnv } from './config/env.js';
-import { createLogger } from './lib/logger.js';
-import { connectMongo, closeMongo } from './db/mongo.js';
-import { ensureIndexes } from './db/indexes.js';
-import { MongoUserRepository } from './db/repositories/mongo-user-repository.js';
-import { MongoSessionRepository } from './db/repositories/mongo-session-repository.js';
+import { compose } from './compose.js';
 import { createApp } from './app.js';
+import { closeMongo } from './db/mongo.js';
 
 async function main(): Promise<void> {
-  let env;
+  let studio;
   try {
-    env = loadEnv();
+    studio = await compose();
   } catch (err) {
     process.stderr.write(
       `${err instanceof Error ? err.message : String(err)}\n`,
@@ -17,52 +13,47 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const logger = createLogger(env);
-
-  let db;
-  try {
-    db = await connectMongo(env.MONGODB_URI, logger);
-    await ensureIndexes(db);
-  } catch (err) {
-    logger.fatal({ err }, 'MongoDB unreachable at startup');
-    process.exit(1);
-  }
+  const { env, logger, db, users, sessions, worker, telemetry, comfy, hub } =
+    studio;
 
   const app = createApp({
     env,
     logger,
     db,
-    users: new MongoUserRepository(db),
-    sessions: new MongoSessionRepository(db),
+    users,
+    sessions,
   });
 
   const server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT }, 'Server listening');
   });
 
+  await worker.start();
+
   let shuttingDown = false;
 
   async function shutdown(signal: string): Promise<void> {
-    if (shuttingDown) {
-      return;
-    }
+    if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down');
 
     const force = setTimeout(() => {
-      logger.error('Forced exit after 10s');
+      logger.error('Forced exit after 35s');
       process.exit(1);
-    }, 10_000);
+    }, 35_000);
     force.unref();
 
-    server.close(async () => {
-      try {
-        await closeMongo(logger);
-      } catch (err) {
-        logger.error({ err }, 'Error closing MongoDB');
-      }
-      process.exit(0);
-    });
+    try {
+      server.close();
+      await worker.stop();
+      await telemetry.flush();
+      comfy.close();
+      hub.close();
+      await closeMongo(logger);
+    } catch (err) {
+      logger.error({ err }, 'Error during shutdown');
+    }
+    process.exit(0);
   }
 
   process.on('SIGINT', () => {

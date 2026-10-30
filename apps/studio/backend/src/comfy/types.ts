@@ -19,13 +19,20 @@ export type ComfyHistoryEntry = {
   };
 };
 
+export type ComfyQueueSnapshot = {
+  running: string[];
+  pending: string[];
+};
+
 export type ComfyHttp = {
   /** `promptId` is chosen by the caller so the WebSocket can subscribe first. */
   submit(graph: ApiGraph, clientId: string, promptId: string): Promise<string>;
   history(promptId: string): Promise<ComfyHistoryEntry | null>;
   view(ref: ComfyImageRef): Promise<Buffer>;
   interrupt(): Promise<void>;
-  queue(): Promise<unknown>;
+  queue(): Promise<ComfyQueueSnapshot>;
+  /** Remove a prompt from ComfyUI's pending/running queues. */
+  clearPrompt(promptId: string): Promise<void>;
   ping(): Promise<void>;
 };
 

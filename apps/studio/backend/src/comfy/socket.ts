@@ -20,6 +20,8 @@ export type CreateComfySocketOptions = {
   logger: Logger;
   clientId?: string;
   onRawText?: (text: string) => void;
+  /** Fires on first connect and every successful reconnect. */
+  onConnected?: () => void;
   WebSocketImpl?: typeof WebSocket;
 };
 
@@ -34,7 +36,7 @@ function toWsUrl(baseUrl: string, clientId: string): string {
 export function createComfySocket(opts: CreateComfySocketOptions): ComfySocket {
   const clientId = opts.clientId ?? randomUUID();
   const WS = opts.WebSocketImpl ?? WebSocket;
-  const { logger, onRawText } = opts;
+  const { logger, onRawText, onConnected } = opts;
   const subscribers = new Map<string, Set<ComfyEventHandler>>();
 
   let socket: WebSocket | null = null;
@@ -42,6 +44,7 @@ export function createComfySocket(opts: CreateComfySocketOptions): ComfySocket {
   let attempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let connected = false;
+  let everConnected = false;
 
   const dispatch = (event: ComfyWsEvent): void => {
     if (!('promptId' in event)) return;
@@ -61,6 +64,11 @@ export function createComfySocket(opts: CreateComfySocketOptions): ComfySocket {
       connected = true;
       attempt = 0;
       logger.info({ clientId }, 'comfy websocket connected');
+      // Skip the first open so warm-up can run once from boot; later opens are reconnects.
+      if (everConnected) {
+        onConnected?.();
+      }
+      everConnected = true;
     });
 
     socket.addEventListener('message', (msg) => {
@@ -116,7 +124,10 @@ export function createComfySocket(opts: CreateComfySocketOptions): ComfySocket {
     },
     close() {
       closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       socket?.close();
       socket = null;
       connected = false;

@@ -41,3 +41,12 @@ export {
   type ApiErrorDetail,
   type ApiErrorBody,
 } from './schemas/error.js';
+
+export {
+  jobStageSchema,
+  engineStateSchema,
+  studioEventSchema,
+  type JobStage,
+  type EngineState,
+  type StudioEvent,
+} from './schemas/events.js';
