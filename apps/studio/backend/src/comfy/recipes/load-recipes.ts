@@ -6,6 +6,7 @@ import {
   type ParamTarget,
   type RecipeManifest,
 } from './manifest-schema.js';
+import { assertRecipeMatchRules } from './match-validation.js';
 import type { Recipe } from './recipe.js';
 
 function buildTitleIndex(graph: ApiGraph): Map<string, string[]> {
@@ -132,5 +133,7 @@ export async function loadRecipes(recipesDir: string): Promise<Map<string, Recip
   if (recipes.size === 0) {
     throw new Error(`No recipes found under ${recipesDir}`);
   }
+
+  assertRecipeMatchRules([...recipes.values()].map((r) => r.manifest));
   return recipes;
 }

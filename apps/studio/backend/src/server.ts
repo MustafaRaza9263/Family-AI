@@ -13,8 +13,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { env, logger, db, users, sessions, worker, telemetry, comfy, hub } =
-    studio;
+  const {
+    env,
+    logger,
+    db,
+    users,
+    sessions,
+    worker,
+    telemetry,
+    comfy,
+    hub,
+    api,
+  } = studio;
 
   const app = createApp({
     env,
@@ -22,6 +32,7 @@ async function main(): Promise<void> {
     db,
     users,
     sessions,
+    studio: api,
   });
 
   const server = app.listen(env.PORT, () => {

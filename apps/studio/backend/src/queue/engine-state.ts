@@ -9,6 +9,8 @@ export type EngineMonitor = {
   getState(): EngineState;
   /** True when the worker may claim (ready and not paused). */
   canClaim(): boolean;
+  /** Apply admin pause immediately (settings write already happened). */
+  setPaused(value: boolean): void;
   start(): void;
   /** Awaited once at boot so the first claim sees a real engine state. */
   ready(): Promise<void>;
@@ -69,6 +71,11 @@ export function createEngineMonitor(
     getState: resolve,
     canClaim() {
       return !paused && pingState === 'ready';
+    },
+    setPaused(value) {
+      if (paused === value) return;
+      paused = value;
+      publish();
     },
     start() {
       if (timer) return;

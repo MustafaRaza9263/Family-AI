@@ -9,24 +9,38 @@ export function sampleManifest(
     id: 'image-create-fast',
     tool: 'image',
     timeoutSeconds: 120,
+    match: {
+      tool: 'image',
+      inputImages: { min: 0, max: 0 },
+      variant: {
+        id: 'fast',
+        label: 'Fast',
+        icon: 'zap',
+        default: true,
+      },
+    },
     params: {
       prompt: {
         type: 'text',
+        label: 'Prompt',
+        group: 'primary',
         maxLength: 1000,
         target: { title: 'IN_PROMPT', fields: ['text'] },
       },
       aspectRatio: {
         type: 'enum',
+        label: 'Aspect ratio',
+        group: 'primary',
         default: '1:1',
         options: [
           {
             value: '1:1',
-            label: '1:1',
+            label: 'Square 1:1',
             sizes: { width: 1024, height: 1024 },
           },
           {
             value: '16:9',
-            label: '16:9',
+            label: 'Landscape 16:9',
             sizes: { width: 1344, height: 768 },
           },
         ],

@@ -10,6 +10,7 @@ import { MongoJobRepository } from './db/repositories/mongo-job-repository.js';
 import { MongoAssetRepository } from './db/repositories/mongo-asset-repository.js';
 import { MongoUsageDailyRepository } from './db/repositories/mongo-usage-daily-repository.js';
 import { MongoSettingsRepository } from './db/repositories/mongo-settings-repository.js';
+import { MongoAuditRepository } from './db/repositories/mongo-audit-repository.js';
 import type { UserRepository } from './db/repositories/user-repository.js';
 import type { SessionRepository } from './db/repositories/session-repository.js';
 import type { ThreadRepository } from './db/repositories/thread-repository.js';
@@ -17,12 +18,20 @@ import type { JobRepository } from './db/repositories/job-repository.js';
 import type { AssetRepository } from './db/repositories/asset-repository.js';
 import type { UsageDailyRepository } from './db/repositories/usage-daily-repository.js';
 import type { SettingsRepository } from './db/repositories/settings-repository.js';
+import type { AuditRepository } from './db/repositories/audit-repository.js';
 import { createEventHub, type EventHub } from './events/hub.js';
 import { systemClock, type Clock } from './lib/clock.js';
 import { createLogger, type Logger } from './lib/logger.js';
 import { LimitsService } from './limits/limits.service.js';
 import { createQueueWorker, type QueueWorker } from './queue/worker.js';
 import { GenerationService } from './services/generation.service.js';
+import { CapabilitiesService } from './services/capabilities.service.js';
+import { ThreadService } from './services/thread.service.js';
+import { GenerationQueryService } from './services/generation-query.service.js';
+import { FilesService } from './services/files.service.js';
+import { LibraryService } from './services/library.service.js';
+import { AdminStudioService } from './services/admin-studio.service.js';
+import type { StudioApiServices } from './app.js';
 import {
   createTelemetry,
   MongoMetricsStore,
@@ -30,6 +39,7 @@ import {
   telemetryConfigFromEnv,
   type Telemetry,
 } from './telemetry/index.js';
+import type { MetricsStore } from './telemetry/store/types.js';
 
 export type StudioCompose = {
   env: Env;
@@ -43,12 +53,15 @@ export type StudioCompose = {
   assets: AssetRepository;
   usage: UsageDailyRepository;
   settings: SettingsRepository;
+  audit: AuditRepository;
+  metrics: MetricsStore;
   comfy: ComfyClient;
   telemetry: Telemetry;
   hub: EventHub;
   limits: LimitsService;
   worker: QueueWorker;
   generation: GenerationService;
+  api: StudioApiServices;
 };
 
 export async function compose(
@@ -74,6 +87,7 @@ export async function compose(
   const assets = new MongoAssetRepository(db);
   const usage = new MongoUsageDailyRepository(db);
   const settings = new MongoSettingsRepository(db);
+  const audit = new MongoAuditRepository(db);
 
   const hub = createEventHub(clock);
   const sampler = new SystemSampler({ logger });
@@ -131,6 +145,51 @@ export async function compose(
     lastServedAt: worker.lastServedAt,
   });
 
+  const capabilities = new CapabilitiesService({
+    recipes: comfy.recipes,
+    limits,
+    getEngineState: () => worker.getEngineState(),
+  });
+  const threadService = new ThreadService({
+    threads,
+    jobs,
+    assets,
+    clock,
+    logger,
+  });
+  const generationQuery = new GenerationQueryService({
+    generation,
+    jobs,
+    threads,
+    worker,
+    clock,
+  });
+  const files = new FilesService({
+    assets,
+    audit,
+    clock,
+    logger,
+    dataDir: env.DATA_DIR,
+  });
+  const library = new LibraryService(assets);
+  const adminStudio = new AdminStudioService({
+    jobs,
+    settings,
+    metrics: metricsStore,
+    wake: () => worker.wake(),
+    setEnginePaused: (paused) => worker.setEnginePaused(paused),
+  });
+
+  const api: StudioApiServices = {
+    hub,
+    capabilities,
+    threads: threadService,
+    generations: generationQuery,
+    files,
+    library,
+    adminStudio,
+  };
+
   return {
     env,
     logger,
@@ -143,11 +202,14 @@ export async function compose(
     assets,
     usage,
     settings,
+    audit,
+    metrics: metricsStore,
     comfy,
     telemetry,
     hub,
     limits,
     worker,
     generation,
+    api,
   };
 }

@@ -46,4 +46,9 @@ export async function ensureIndexes(db: Db): Promise<void> {
   await db.collection('settings').createIndexes([
     { key: { _id: 1 }, name: 'settings_id' },
   ]);
+
+  await db.collection('audit_logs').createIndexes([
+    { key: { at: -1 }, name: 'audit_logs_at' },
+    { key: { actorId: 1, at: -1 }, name: 'audit_logs_actorId_at' },
+  ]);
 }

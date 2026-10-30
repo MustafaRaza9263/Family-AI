@@ -5,6 +5,8 @@ import type {
   FinishJobInput,
   JobRecord,
   JobRepository,
+  ListAdminJobsOpts,
+  ListJobsByThreadOpts,
 } from './job-repository.js';
 import type { JobStatus } from '../documents.js';
 
@@ -76,6 +78,34 @@ export class MongoJobRepository implements JobRepository {
 
   async listByStatus(status: JobStatus): Promise<JobRecord[]> {
     const docs = await this.jobs.find({ status }).toArray();
+    return docs.map(toRecord);
+  }
+
+  async listByThread(opts: ListJobsByThreadOpts): Promise<JobRecord[]> {
+    if (!ObjectId.isValid(opts.threadId)) return [];
+    const docs = await this.jobs
+      .find({ threadId: new ObjectId(opts.threadId) })
+      .sort({ 'timings.queuedAt': 1, _id: 1 })
+      .toArray();
+    return docs.map(toRecord);
+  }
+
+  async listAdmin(opts: ListAdminJobsOpts): Promise<JobRecord[]> {
+    const filter: Record<string, unknown> = {};
+    if (opts.before && ObjectId.isValid(opts.before.id)) {
+      filter.$or = [
+        { 'timings.queuedAt': { $lt: opts.before.queuedAt } },
+        {
+          'timings.queuedAt': opts.before.queuedAt,
+          _id: { $lt: new ObjectId(opts.before.id) },
+        },
+      ];
+    }
+    const docs = await this.jobs
+      .find(filter)
+      .sort({ 'timings.queuedAt': -1, _id: -1 })
+      .limit(opts.limit)
+      .toArray();
     return docs.map(toRecord);
   }
 

@@ -3,6 +3,7 @@ import type {
   AssetRecord,
   AssetRepository,
   CreateAssetInput,
+  ListLibraryOpts,
 } from '../../src/db/repositories/asset-repository.js';
 
 export class MemoryAssetRepository implements AssetRepository {
@@ -34,6 +35,40 @@ export class MemoryAssetRepository implements AssetRepository {
     const a = this.assets.get(id);
     if (!a || a.deletedAt) return null;
     return { ...a };
+  }
+
+  async findByIds(ids: string[]): Promise<AssetRecord[]> {
+    return ids
+      .map((id) => this.assets.get(id))
+      .filter((a): a is AssetRecord => !!a && !a.deletedAt)
+      .map((a) => ({ ...a }));
+  }
+
+  async listByThread(threadId: string): Promise<AssetRecord[]> {
+    return [...this.assets.values()]
+      .filter((a) => a.threadId === threadId && !a.deletedAt)
+      .map((a) => ({ ...a }));
+  }
+
+  async listLibrary(opts: ListLibraryOpts): Promise<AssetRecord[]> {
+    let rows = [...this.assets.values()].filter(
+      (a) => a.userId === opts.userId && !a.deletedAt,
+    );
+    if (opts.kind) rows = rows.filter((a) => a.kind === opts.kind);
+    rows.sort((a, b) => {
+      const dt = b.createdAt.getTime() - a.createdAt.getTime();
+      if (dt !== 0) return dt;
+      return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+    });
+    const before = opts.before;
+    if (before) {
+      rows = rows.filter((a) => {
+        const ct = a.createdAt.getTime();
+        const bt = before.createdAt.getTime();
+        return ct < bt || (ct === bt && a.id < before.id);
+      });
+    }
+    return rows.slice(0, opts.limit).map((a) => ({ ...a }));
   }
 
   async updatePaths(

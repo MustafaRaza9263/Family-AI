@@ -4,6 +4,7 @@ import type {
   AssetRecord,
   AssetRepository,
   CreateAssetInput,
+  ListLibraryOpts,
 } from './asset-repository.js';
 
 function toRecord(doc: AssetDocument): AssetRecord {
@@ -65,6 +66,52 @@ export class MongoAssetRepository implements AssetRepository {
       deletedAt: { $exists: false },
     });
     return doc ? toRecord(doc) : null;
+  }
+
+  async findByIds(ids: string[]): Promise<AssetRecord[]> {
+    const objectIds = ids
+      .filter((id) => ObjectId.isValid(id))
+      .map((id) => new ObjectId(id));
+    if (objectIds.length === 0) return [];
+    const docs = await this.assets
+      .find({ _id: { $in: objectIds }, deletedAt: { $exists: false } })
+      .toArray();
+    return docs.map(toRecord);
+  }
+
+  async listByThread(threadId: string): Promise<AssetRecord[]> {
+    if (!ObjectId.isValid(threadId)) return [];
+    const docs = await this.assets
+      .find({
+        threadId: new ObjectId(threadId),
+        deletedAt: { $exists: false },
+      })
+      .toArray();
+    return docs.map(toRecord);
+  }
+
+  async listLibrary(opts: ListLibraryOpts): Promise<AssetRecord[]> {
+    if (!ObjectId.isValid(opts.userId)) return [];
+    const filter: Record<string, unknown> = {
+      userId: new ObjectId(opts.userId),
+      deletedAt: { $exists: false },
+    };
+    if (opts.kind) filter.kind = opts.kind;
+    if (opts.before && ObjectId.isValid(opts.before.id)) {
+      filter.$or = [
+        { createdAt: { $lt: opts.before.createdAt } },
+        {
+          createdAt: opts.before.createdAt,
+          _id: { $lt: new ObjectId(opts.before.id) },
+        },
+      ];
+    }
+    const docs = await this.assets
+      .find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(opts.limit)
+      .toArray();
+    return docs.map(toRecord);
   }
 
   async updatePaths(

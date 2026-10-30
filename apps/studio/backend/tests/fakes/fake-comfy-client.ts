@@ -26,6 +26,16 @@ export function createFakeComfyClient(
           id: 'image-create-fast',
           tool: 'image' as const,
           timeoutSeconds: 60,
+          match: {
+            tool: 'image' as const,
+            inputImages: { min: 0, max: 0 },
+            variant: {
+              id: 'fast',
+              label: 'Fast',
+              icon: 'zap',
+              default: true,
+            },
+          },
           params: {},
           seed: { target: { title: 'IN_SAMPLER', fields: ['seed'] } },
           output: { title: 'OUT_IMAGE', prefixField: 'filename_prefix' },

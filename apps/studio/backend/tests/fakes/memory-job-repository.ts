@@ -5,6 +5,8 @@ import type {
   FinishJobInput,
   JobRecord,
   JobRepository,
+  ListAdminJobsOpts,
+  ListJobsByThreadOpts,
 } from '../../src/db/repositories/job-repository.js';
 
 export class MemoryJobRepository implements JobRepository {
@@ -44,6 +46,35 @@ export class MemoryJobRepository implements JobRepository {
 
   async listByStatus(status: JobStatus): Promise<JobRecord[]> {
     return [...this.jobs.values()].filter((j) => j.status === status).map(clone);
+  }
+
+  async listByThread(opts: ListJobsByThreadOpts): Promise<JobRecord[]> {
+    return [...this.jobs.values()]
+      .filter((j) => j.threadId === opts.threadId)
+      .sort((a, b) => {
+        const dt = a.timings.queuedAt.getTime() - b.timings.queuedAt.getTime();
+        if (dt !== 0) return dt;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      })
+      .map(clone);
+  }
+
+  async listAdmin(opts: ListAdminJobsOpts): Promise<JobRecord[]> {
+    let rows = [...this.jobs.values()];
+    rows.sort((a, b) => {
+      const dt = b.timings.queuedAt.getTime() - a.timings.queuedAt.getTime();
+      if (dt !== 0) return dt;
+      return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+    });
+    const before = opts.before;
+    if (before) {
+      rows = rows.filter((j) => {
+        const qt = j.timings.queuedAt.getTime();
+        const bt = before.queuedAt.getTime();
+        return qt < bt || (qt === bt && j.id < before.id);
+      });
+    }
+    return rows.slice(0, opts.limit).map(clone);
   }
 
   async countByUserAndStatuses(

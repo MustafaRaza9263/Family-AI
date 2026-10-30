@@ -1,6 +1,5 @@
 import cookieParser from 'cookie-parser';
 import express, { type Express } from 'express';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Db } from 'mongodb';
 import type { Env } from './config/env.js';
@@ -9,9 +8,16 @@ import { systemClock } from './lib/clock.js';
 import type { Logger } from './lib/logger.js';
 import type { SessionRepository } from './db/repositories/session-repository.js';
 import type { UserRepository } from './db/repositories/user-repository.js';
+import type { EventHub } from './events/hub.js';
 import { AuthService } from './services/auth.service.js';
 import { AdminUsersService } from './services/admin-users.service.js';
 import { SessionService } from './services/session.service.js';
+import type { CapabilitiesService } from './services/capabilities.service.js';
+import type { ThreadService } from './services/thread.service.js';
+import type { GenerationQueryService } from './services/generation-query.service.js';
+import type { FilesService } from './services/files.service.js';
+import type { LibraryService } from './services/library.service.js';
+import type { AdminStudioService } from './services/admin-studio.service.js';
 import { applySecurity } from './middleware/security.js';
 import { createOriginCheck } from './middleware/origin-check.js';
 import {
@@ -26,9 +32,27 @@ import {
 import { createSessionMiddleware } from './middleware/session.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
+import { mountFrontendStatic } from './middleware/frontend-static.js';
 import { createAuthRoutes } from './routes/auth.routes.js';
 import { createAdminRoutes } from './routes/admin.routes.js';
+import { createAdminStudioRoutes } from './routes/admin-studio.routes.js';
 import { createHealthRoutes } from './routes/health.routes.js';
+import { createCapabilitiesRoutes } from './routes/capabilities.routes.js';
+import { createThreadsRoutes } from './routes/threads.routes.js';
+import { createGenerationsRoutes } from './routes/generations.routes.js';
+import { createEventsRoutes } from './routes/events.routes.js';
+import { createFilesRoutes } from './routes/files.routes.js';
+import { createLibraryRoutes } from './routes/library.routes.js';
+
+export type StudioApiServices = {
+  hub: EventHub;
+  capabilities: CapabilitiesService;
+  threads: ThreadService;
+  generations: GenerationQueryService;
+  files: FilesService;
+  library: LibraryService;
+  adminStudio: AdminStudioService;
+};
 
 export type AppDeps = {
   env: Env;
@@ -37,6 +61,7 @@ export type AppDeps = {
   sessions: SessionRepository;
   db: Db | null;
   clock?: Clock;
+  studio?: StudioApiServices;
 };
 
 export type AppOptions = {
@@ -86,17 +111,26 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api', createAuthRoutes(authService, limits));
   app.use('/api', createAdminRoutes(adminService));
 
+  if (deps.studio) {
+    const s = deps.studio;
+    app.use('/api', createCapabilitiesRoutes(s.capabilities));
+    app.use('/api', createThreadsRoutes(s.threads, s.generations, limits));
+    app.use('/api', createGenerationsRoutes(s.generations));
+    app.use('/api', createEventsRoutes(s.hub));
+    app.use('/api', createFilesRoutes(s.files));
+    app.use('/api', createLibraryRoutes(s.library));
+    app.use('/api', createAdminStudioRoutes(s.adminStudio));
+  }
+
   const distDir =
     options.frontendDistDir ??
     path.resolve(process.cwd(), '../frontend/out');
-  if (deps.env.NODE_ENV === 'production' && existsSync(distDir)) {
-    app.use(express.static(distDir));
-    app.get('/{*splat}', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
+  if (deps.env.NODE_ENV === 'production') {
+    mountFrontendStatic(app, distDir, deps.logger);
+  } else {
+    app.use(notFoundHandler);
   }
 
-  app.use(notFoundHandler);
   app.use(createErrorHandler(deps.logger));
 
   return app;

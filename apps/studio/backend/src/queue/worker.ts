@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import type { EngineState } from '@studio/shared';
 import type { ComfyClient } from '../comfy/index.js';
 import type { EventHub } from '../events/hub.js';
 import type { Clock } from '../lib/clock.js';
@@ -27,6 +28,8 @@ export type QueueWorker = {
   start(): Promise<void>;
   wake(): void;
   cancel(jobId: string, userId: string): Promise<boolean>;
+  getEngineState(): EngineState;
+  setEnginePaused(paused: boolean): void;
   /** Stop claims; wait up to 30s for the running job. */
   stop(): Promise<void>;
   readonly lastServedAt: Map<string, number>;
@@ -119,6 +122,12 @@ export function createQueueWorker(opts: CreateWorkerOpts): QueueWorker {
         aborts,
         lastServedAt,
       });
+    },
+    getEngineState() {
+      return engine?.getState() ?? 'unavailable';
+    },
+    setEnginePaused(paused) {
+      engine?.setPaused(paused);
     },
     async start() {
       engine = createEngineMonitor({

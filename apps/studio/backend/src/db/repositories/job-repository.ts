@@ -43,11 +43,22 @@ export type FinishJobInput = {
   errorCode?: string;
 };
 
+export type ListJobsByThreadOpts = {
+  threadId: string;
+};
+
+export type ListAdminJobsOpts = {
+  limit: number;
+  before?: { queuedAt: Date; id: string };
+};
+
 export interface JobRepository {
   create(input: CreateJobInput): Promise<JobRecord>;
   findById(id: string): Promise<JobRecord | null>;
   listQueued(): Promise<JobRecord[]>;
   listByStatus(status: JobStatus): Promise<JobRecord[]>;
+  listByThread(opts: ListJobsByThreadOpts): Promise<JobRecord[]>;
+  listAdmin(opts: ListAdminJobsOpts): Promise<JobRecord[]>;
   countByUserAndStatuses(
     userId: string,
     statuses: JobStatus[],
