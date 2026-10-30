@@ -15,14 +15,15 @@ export function toUserJob(job: JobRecord): UserJob {
     id: job.id,
     threadId: job.threadId,
     tool: job.tool,
-    variant: job.variant,
+    // Coerce null → omit; Zod optional rejects JSON null from Mongo.
+    variant: job.variant ?? undefined,
     status: job.status,
     prompt: job.prompt,
     params: { ...job.params },
     inputAssetIds: [...job.inputAssetIds],
     outputAssetIds: [...job.outputAssetIds],
-    parentAssetId: job.parentAssetId,
-    errorCode: job.errorCode,
+    parentAssetId: job.parentAssetId ?? undefined,
+    errorCode: job.errorCode ?? undefined,
     timings: timings(job),
   };
 }

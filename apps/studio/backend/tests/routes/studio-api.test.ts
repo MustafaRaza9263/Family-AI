@@ -42,7 +42,7 @@ describe('studio HTTP API', () => {
     const agent = await loginAgent(app, 'a@example.com', 'password1234');
     const res = await agent.get('/api/capabilities');
     expect(res.status).toBe(200);
-    expect(res.body.product).toBe('Minimal Studio');
+    expect(res.body.product).toBe('Family Studio');
     expect(JSON.stringify(res.body)).not.toContain('image-create-fast');
     expect(JSON.stringify(res.body)).not.toMatch(/IN_/);
   });

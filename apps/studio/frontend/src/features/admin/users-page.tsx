@@ -4,7 +4,6 @@ import type { AdminUserListQuery } from '@studio/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminUsers } from './hooks';
 import { StatusTabs, type StatusTab } from './status-tabs';
@@ -40,11 +39,6 @@ export function UsersPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Users"
-        description="Approve new accounts and manage access."
-      />
-
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <StatusTabs
           value={tab}

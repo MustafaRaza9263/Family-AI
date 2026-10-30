@@ -11,10 +11,9 @@ export function Avatar({
   return (
     <span
       className={cn(
-        'inline-flex size-9 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground',
+        'inline-flex size-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground',
         className,
       )}
-      style={{ backgroundImage: 'var(--gradient-brand)' }}
       aria-hidden
     >
       {initials(name)}

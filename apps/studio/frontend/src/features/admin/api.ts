@@ -3,8 +3,11 @@ import {
   adminUpdateUserResponseSchema,
   adminUserListQuerySchema,
   adminUserListResponseSchema,
+  engineSchema,
+  patchEngineRequestSchema,
   type AdminUpdateUserRequest,
   type AdminUserListQuery,
+  type PatchEngineRequest,
 } from '@studio/shared';
 import { apiFetch } from '@/lib/api-client';
 
@@ -34,4 +37,16 @@ export async function updateUserStatus(
       body: JSON.stringify(parsed),
     },
   );
+}
+
+export function getEngine() {
+  return apiFetch('/api/admin/engine', engineSchema);
+}
+
+export function patchEngine(body: PatchEngineRequest) {
+  const parsed = patchEngineRequestSchema.parse(body);
+  return apiFetch('/api/admin/engine', engineSchema, {
+    method: 'PATCH',
+    body: JSON.stringify(parsed),
+  });
 }

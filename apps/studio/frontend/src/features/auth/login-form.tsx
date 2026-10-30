@@ -10,26 +10,16 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { ApiError } from '@/lib/api-client';
+import { errorMessage } from '@/lib/errors';
 import { useLogin } from './hooks';
 
 type FormValues = z.infer<typeof loginRequestSchema>;
 
 function loginErrorMessage(err: unknown): string {
   if (!(err instanceof ApiError)) {
-    return 'Something went wrong. Please try again.';
+    return errorMessage(undefined);
   }
-  switch (err.code) {
-    case 'INVALID_CREDENTIALS':
-      return 'Incorrect email or password.';
-    case 'ACCOUNT_PENDING':
-      return 'Your account is waiting for admin approval.';
-    case 'ACCOUNT_DISABLED':
-      return 'This account has been disabled. Please contact your admin.';
-    case 'RATE_LIMITED':
-      return 'Too many attempts. Please try again in a few minutes.';
-    default:
-      return err.message;
-  }
+  return errorMessage(String(err.code));
 }
 
 export function LoginForm() {

@@ -9,11 +9,12 @@ export function toAssetDto(asset: AssetRecord): AssetDto {
     bytes: asset.bytes,
     width: asset.width,
     height: asset.height,
-    durationSec: asset.durationSec,
+    // Coerce null → omit; Zod optional rejects JSON null from Mongo.
+    durationSec: asset.durationSec ?? undefined,
     source: asset.source,
-    threadId: asset.threadId,
-    jobId: asset.jobId,
-    parentAssetId: asset.parentAssetId,
+    threadId: asset.threadId ?? undefined,
+    jobId: asset.jobId ?? undefined,
+    parentAssetId: asset.parentAssetId ?? undefined,
     createdAt: asset.createdAt.toISOString(),
   };
 }

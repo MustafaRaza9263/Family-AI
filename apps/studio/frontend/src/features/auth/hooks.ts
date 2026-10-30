@@ -3,13 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { queryKeys } from '@/lib/query-keys';
 import * as authApi from './api';
-
-export const meQueryKey = ['me'] as const;
 
 export function useMe() {
   return useQuery({
-    queryKey: meQueryKey,
+    queryKey: queryKeys.me,
     queryFn: authApi.fetchMe,
   });
 }
@@ -20,7 +19,7 @@ export function useLogin() {
   return useMutation({
     mutationFn: authApi.login,
     onSuccess: (data) => {
-      queryClient.setQueryData(meQueryKey, data);
+      queryClient.setQueryData(queryKeys.me, data);
       router.replace('/');
     },
   });
@@ -38,7 +37,7 @@ export function useLogout() {
   return useMutation({
     mutationFn: authApi.logout,
     onSuccess: () => {
-      queryClient.setQueryData(meQueryKey, null);
+      queryClient.setQueryData(queryKeys.me, null);
       router.replace('/login/');
     },
     onError: () => {

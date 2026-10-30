@@ -5,6 +5,8 @@ import { MotionConfig } from 'motion/react';
 import { ThemeProvider } from 'next-themes';
 import { useState, type ReactNode } from 'react';
 import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { NotificationsProvider } from '@/features/notifications';
 import { createQueryClient } from '@/lib/query-client';
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -19,8 +21,12 @@ export function Providers({ children }: { children: ReactNode }) {
         disableTransitionOnChange
       >
         <MotionConfig reducedMotion="user">
-          {children}
-          <Toaster />
+          <TooltipProvider>
+            <NotificationsProvider>
+              {children}
+              <Toaster />
+            </NotificationsProvider>
+          </TooltipProvider>
         </MotionConfig>
       </ThemeProvider>
     </QueryClientProvider>

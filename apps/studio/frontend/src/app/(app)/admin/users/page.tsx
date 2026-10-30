@@ -1,12 +1,12 @@
 'use client';
 
-import { UsersPage } from '@/features/admin/users-page';
+import { AdminShell } from '@/features/admin/admin-shell';
 import { RequireAdmin } from '@/features/auth/require-admin';
 
 export default function AdminUsersRoute() {
   return (
     <RequireAdmin>
-      <UsersPage />
+      <AdminShell />
     </RequireAdmin>
   );
 }

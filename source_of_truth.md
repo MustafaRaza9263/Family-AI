@@ -62,7 +62,7 @@ company-ai/
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
-│           └── src/        app · components/{ui,layout} · features/{auth,admin} · lib  (create/library/tool-form planned)
+│           └── src/        app · components/{ui,layout} · features/{auth,create,library,admin,events,notifications} · hooks · lib
 ├── infra/
 │   ├── vllm/               docker-compose.yml · .env.example
 │   └── comfyui/            Dockerfile · docker-compose.yml · workflows/ (UI-format originals) · .env (gitignored)
@@ -143,7 +143,7 @@ A new *project* for an existing app (for example another property) is just a new
 
 ### 8.1 Goal and shape
 
-Staff (marketing first) generate images and videos from one simple branded app. ComfyUI is the engine behind it and is never exposed. Users pick **presets** (aspect ratio, quality, duration), never models, graphs or nodes. Product name is a placeholder ("Minimal Studio"), kept in one config constant. Stack: Express 5 + TypeScript backend · Next.js static export served by Express (prod: one port, 4001; dev UI on 3001) · MongoDB (own container, database `studio`) · ComfyUI over `studio-engine`.
+Staff (marketing first) generate images and videos from one simple branded app. ComfyUI is the engine behind it and is never exposed. Users pick **presets** (aspect ratio, quality, duration), never models, graphs or nodes. Product name is "Family Studio", kept in one config constant. Stack: Express 5 + TypeScript backend · Next.js static export served by Express (prod: one port, 4001; dev UI on 3001) · MongoDB (own container, database `studio`) · ComfyUI over `studio-engine`.
 
 ### 8.2 How a request flows
 
@@ -281,7 +281,7 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 
 ### 8.7 API surface (`/api`)
 
-Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Minimal Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; admin job DTO includes `recipeId`. Capabilities are built from loaded recipes (new recipe folder → new mode, no route change); serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words.
+Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; admin job DTO includes `recipeId`. Capabilities are built from loaded recipes (new recipe folder → new mode, no route change); serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words.
 
 | Area | Endpoints |
 |---|---|
@@ -319,9 +319,9 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 - **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke` · `npm run api:smoke`.
 - **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`, `STUDIO_TIMEZONE` (IANA, default UTC), `RETENTION_DAYS` (default 30), `ENGINE_PING_INTERVAL_MS` (default 10000). All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`). Smoke: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, optional `SMOKE_BASE_URL`.
 - **Storage:** results under `DATA_DIR/<userId>/` (PNG + `.thumb.webp`); retention soft-delete after `RETENTION_DAYS`. Smoke PNGs under `./tmp/smoke/` (gitignored; not product storage). Dependency: `sharp` (linux-arm64 prebuilt) for thumbnails.
-- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin live; Comfy client + `image-create-fast` live; job pipeline live; **HTTP public contract live** (capabilities, threads, generations, SSE `/events`, files, library, admin jobs/runs/engine/settings; `@studio/shared` DTOs + `pickMode`; static export serving with trailingSlash fallbacks). **Not yet:** frontend create/library screens; uploads; Klein/LTX recipes.
-- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy, manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke` on the Spark (stop extra workers before queue smoke; `api:smoke` needs `dev:backend` up).
-- **Next:** frontend create/library screens → Klein edit/reference recipes → LTX video recipes → uploads.
+- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin live; Comfy client + `image-create-fast` live; job pipeline live; **HTTP public contract live** (capabilities, threads, generations, SSE `/events`, files, library, admin jobs/runs/engine/settings; `@studio/shared` DTOs + `pickMode`; static export serving with trailingSlash fallbacks). **Frontend create/library/SSE/notifications live** (product name Family Studio). **Not yet:** uploads; Klein/LTX recipes; attachments/working-image chip.
+- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy, manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Frontend Vitest: control-state, error copy, notification decisions, SSE cache updater. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke` on the Spark (stop extra workers before queue smoke; `api:smoke` needs `dev:backend` up).
+- **Next:** Klein edit/reference recipes → LTX video recipes → uploads / working-image chip.
 
 ### 8.12 Telemetry (per-job metrics)
 
@@ -420,25 +420,32 @@ apps/studio/
 │       ├── events/        hub
 │       └── services/      pick-recipe · capabilities
 └── frontend/                       (@studio/frontend)
-    ├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs
+    ├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs · vitest.config.ts
     ├── AGENTS.md · README.md
-    ├── public/            (default Next placeholders)
+    ├── public/
     └── src/
         ├── app/
-        │   ├── layout.tsx · providers.tsx · globals.css · not-found.tsx
+        │   ├── layout.tsx · providers.tsx · globals.css · not-found.tsx · error.tsx
         │   ├── (auth)/    login/page · register/page · layout
-        │   └── (app)/     layout · page · admin/users/page
+        │   └── (app)/     layout · page · create · library · profile
+        │                  admin/{page,users,engine}
         ├── components/
-        │   ├── layout/    app-shell · brand-mark · page-header · theme-toggle · user-menu
-        │   └── ui/        button · input · field · card · badge · avatar · spinner
-        │                  skeleton · toaster · dropdown-menu · confirm-dialog · password-input
+        │   ├── layout/    app-shell · sidebar · mobile-tab-bar · brand-mark
+        │   │              theme-toggle · user-menu · offline-banner · engine-banner
+        │   └── ui/        button · input · textarea · field · card · badge · avatar
+        │                  spinner · skeleton · toaster · dropdown-menu · confirm-dialog
+        │                  password-input · dialog · popover · tabs · tooltip · select
+        │                  segmented · chip · empty-state · lightbox
         ├── features/
-        │   ├── auth/      api · hooks · schemas · login-form · register-form
-        │   │              register-success · auth-guard · require-admin
-        │   └── admin/     api · hooks · users-page · users-table · user-card-list
-        │                  user-actions · status-tabs
-        ├── lib/           api-client · query-client · cn · format
-        └── hooks/         (empty — planned)
+        │   ├── auth/      api · hooks · schemas · forms · guards
+        │   ├── create/    api · hooks · control-state · composer · generation cards
+        │   ├── library/   api · hooks · library-page · grid
+        │   ├── admin/     api · hooks · users · engine · admin-shell
+        │   ├── events/    apply-event · use-studio-events · job-live
+        │   └── notifications/  decisions · sound · title · provider · controls
+        ├── lib/           api-client · query-client · query-keys · errors · storage
+        │                  icons · files · cn · format
+        └── hooks/         use-online · use-media-query
 ```
 
 ## 9. Deployment and serving
@@ -515,8 +522,7 @@ apps/studio/
 - Backup target for MongoDB (bot and Studio) and Studio files.
 - Final model choice via evals.
 - Studio: HTTP routes for generations / SSE (`GET /events`) / files / library / capabilities; wire controllers to `GenerationService`, hub and cancel.
-- Studio: frontend create/library screens consuming shared `studioEventSchema`.
-- Studio: move local `pickRecipe` into `@studio/shared` as `pickMode` (part 2).
+- Studio: attachments / working-image chip and uploads UI.
 - Studio: timing table for LTX-2.5 text-to-video (resolutions × durations: seconds and peak memory) to set quotas and presets.
 - Studio: export API-format graphs with titled nodes for Klein text-to-image, edit, multi-reference and for the three LTX video modes; confirm size handling for edits.
 - Studio: product name, department list for signup; revisit daily budgets after the timing matrix.

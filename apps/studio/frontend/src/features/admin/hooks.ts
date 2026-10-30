@@ -9,10 +9,11 @@ import {
 import type { AdminUserListQuery, AdminUserListResponse } from '@studio/shared';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api-client';
+import { queryKeys } from '@/lib/query-keys';
 import * as adminApi from './api';
 
 export function usersQueryKey(query: AdminUserListQuery): QueryKey {
-  return ['admin-users', query];
+  return queryKeys.adminUsers(query.status, query.q ?? '', query.page);
 }
 
 export function useAdminUsers(query: AdminUserListQuery) {
@@ -48,20 +49,36 @@ export function useUpdateUserStatus(query: AdminUserListQuery) {
       return { previous };
     },
     onError: (err, _vars, ctx) => {
-      if (ctx?.previous) {
-        queryClient.setQueryData(key, ctx.previous);
-      }
-      const message =
-        err instanceof ApiError ? err.message : 'Update failed';
-      toast.error(message);
+      if (ctx?.previous) queryClient.setQueryData(key, ctx.previous);
+      toast.error(err instanceof ApiError ? err.message : 'Update failed');
     },
     onSuccess: (_data, vars) => {
-      const label =
-        vars.status === 'active' ? 'User approved' : 'User updated';
-      toast.success(label);
+      toast.success(vars.status === 'active' ? 'User approved' : 'User updated');
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+  });
+}
+
+export function useAdminEngine() {
+  return useQuery({
+    queryKey: queryKeys.adminEngine,
+    queryFn: adminApi.getEngine,
+  });
+}
+
+export function usePatchEngine() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: adminApi.patchEngine,
+    onSuccess: (data) => {
+      client.setQueryData(queryKeys.adminEngine, data);
+      void client.invalidateQueries({ queryKey: queryKeys.capabilities });
+      toast.success(data.paused ? 'Engine paused' : 'Engine resumed');
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : 'Update failed');
     },
   });
 }
