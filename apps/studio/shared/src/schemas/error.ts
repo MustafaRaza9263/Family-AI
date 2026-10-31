@@ -15,6 +15,9 @@ export const apiErrorCodeSchema = z.enum([
   'QUOTA_ACTIVE',
   'QUEUE_FULL',
   'UNSUPPORTED_COMBINATION',
+  'INVALID_INPUT',
+  'UPLOAD_TOO_LARGE',
+  'UPLOAD_INVALID',
   'INTERNAL',
 ]);
 

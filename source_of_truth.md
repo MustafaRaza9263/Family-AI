@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-10-30
+> Last updated: 2026-10-31
 
 ## 1. What this is
 
@@ -12,7 +12,7 @@ On-premise AI assistants and creative tools for the company, powered by one self
 | 1 | `seven-towers-bot` | Q&A on the Seven Towers project from ≤10 pages of company data, for the public (prospective buyers). Proof of concept | In development |
 | 2 | `hub-bot` | Bosses-only assistant over the cloud CRM / EMS / HR / CMS via tool calling | Planned |
 | 3 | `social-bot` | Replies to WhatsApp / social comments / app reviews, human approval for decisions | Planned |
-| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Queue + Comfy + telemetry + HTTP API live; create UI next |
+| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Image flows live (Fast / Best / Edit / Combine + uploads); video recipes next |
 
 Build order: 1 → 2 → 3. `studio` is a parallel track and shares the GPU with bot 1.
 
@@ -58,11 +58,11 @@ company-ai/
 │       ├── backend/
 │       │   ├── src/        compose · config · routes · controllers · services · db · middleware · lib · telemetry · comfy · queue · events · limits
 │       │   ├── recipes/<id>/   manifest.json · workflow.api.json   (one folder per recipe)
-│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke · queue-smoke · api-smoke
+│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke · queue-smoke · api-smoke · flows-smoke
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
-│           └── src/        app · components/{ui,layout} · features/{auth,create,library,admin,events,notifications} · hooks · lib
+│           └── src/        app · components/{ui,layout} · features/{auth,create(+attachments),library,admin,events,notifications} · hooks · lib
 ├── infra/
 │   ├── vllm/               docker-compose.yml · .env.example
 │   └── comfyui/            Dockerfile · docker-compose.yml · workflows/ (UI-format originals) · .env (gitignored)
@@ -147,16 +147,16 @@ Staff (marketing first) generate images and videos from one simple branded app. 
 
 ### 8.2 How a request flows
 
-1. Caller (`POST /api/threads/:id/generations`, or `GenerationService` / `queue:smoke`) validates input, checks quotas and reserves a daily run (section 8.5).
-2. **Recipe resolver** (`pick-recipe.ts`) uses shared `pickMode` against each recipe’s `match` (tool + input image count + optional variant). The user never chooses a workflow. Missing recipe → `UNSUPPORTED_COMBINATION`.
-3. A `jobs` document is saved as `queued`; the event hub publishes `job.queued` with position; the worker is woken. Empty thread titles are set from the first prompt (60 chars).
+1. Caller (`POST /api/threads/:id/generations`, or `GenerationService` / smoke scripts) Zod-validates `{ tool, prompt, values, variant?, inputAssetIds }`, checks each input asset (exists, owner, image, not deleted), checks quotas and reserves a daily run (section 8.5).
+2. **Recipe resolver** (`pick-recipe.ts`) uses shared `pickMode` against each recipe’s `match` (tool + input image count + optional variant). A variant that does not exist at that count is ignored (fall back to the default candidate). The user never chooses a workflow. Missing recipe → `UNSUPPORTED_COMBINATION`. Bad asset → `INVALID_INPUT`.
+3. A `jobs` document is saved as `queued` (`parentAssetId` set only for a 1-image edit); the event hub publishes `job.queued` with position; the worker is woken. Empty thread titles are set from the first prompt (60 chars).
 4. A single worker loop claims the next eligible job when the engine is ready and not paused.
-5. The ComfyUI client copies the recipe graph in memory, sets allowed values by node title, a **fresh random seed** and `filename_prefix`, then `POST /prompt`.
+5. The worker reads each input asset file from disk (missing file → `INVALID_INPUT` + refund). `comfy.run` uploads each to ComfyUI (`POST /upload/image`, subfolder `studio`, name `studio/<jobId>_<n>.png`), `patchGraph` writes LoadImage filenames (+ detach unused reference slots), allowed params, a **fresh random seed** and `filename_prefix`, then `POST /prompt`.
 6. One persistent WebSocket delivers progress; the worker maps node class → UI stage and publishes `job.progress` (never node/class/recipe names). Telemetry gets `runStart` / `runEvent` / `runEnd`.
-7. On success: bytes → `DATA_DIR/<userId>/<assetId>.png`, WebP thumb (sharp, max 512 px), `assets` insert, job `done`, `job.done`, `usage_daily.gpuSeconds` += runMs/1000.
+7. On success: bytes → `DATA_DIR/<userId>/<assetId>.png`, WebP thumb (sharp, max 512 px), `assets` insert (`source: generated`), job `done`, `job.done`, `usage_daily.gpuSeconds` += runMs/1000.
 8. On failure/cancel: map to job `errorCode`, refund when the rules say so, publish `job.failed` / `job.cancelled`.
 
-HTTP adapters for generate / events / files / library / capabilities / admin jobs·runs·engine·settings are wired (section 8.7). Why it stays fast: in-memory graph patch; one WebSocket; warm-up at boot; no LLM hop.
+HTTP adapters for generate / uploads / events / files / library / capabilities / admin are wired (section 8.7). Why it stays fast: in-memory graph patch; one WebSocket; warm-up at boot; no LLM hop.
 
 ### 8.3 One pipeline for create and edit
 
@@ -174,66 +174,83 @@ The UI has **one composer per output type** (Image, Video) inside a thread. A th
 
 Rules:
 
-- **The working image is explicit state, not a guess.** After a result appears, it becomes the thread's *working image* and shows as a chip above the composer ("Editing this image ✕"). The next message with the chip attached is an edit. Removing the chip makes the next message a new image. The chip is sent as `inputAssetIds`; the server never infers intent from the prompt text.
-- Any earlier result in the thread (or an upload, or a library image) can be clicked "Use as base". Each edit is a new job and a new asset with `parentAssetId`, so the thread is a visible history and branches are possible.
-- 2–4 attached images switch to `image-reference` automatically. Video from an image result is an "Animate" action in the same thread: the output switches to Video with the image attached.
-- No LLM router. It would add a second model call (latency, GPU contention, nondeterminism) for something the chip already states explicitly.
-- Input images reach ComfyUI via `POST /upload/image` as `studio_<assetId>.png`. The backend remembers what it already uploaded.
-- Edit output size follows the input's aspect ratio, snapped to the allowed size presets.
-- Z-Image and Klein are different model families, so alternating them can reload a model. A later scheduler improvement groups queued jobs by family.
-- Capabilities are driven by the recipes present. The UI only offers what `GET /api/capabilities` reports (for example no audio tool until a recipe exists).
+- **The working image is explicit state, not a guess.** After a result appears, it becomes the thread's *working image* and shows as the first attachment with label "Editing this image" and an ✕. The next message with it attached is an edit. Removing it makes the next message a new image; dismissal is remembered per thread in `sessionStorage` (try/catch guarded). On reload, the working image is derived from the thread's last done result unless dismissed. Sent as `inputAssetIds`; the server never infers intent from the prompt text.
+- **Mode chip** on the composer shows the picked mode's `label` (Create / Edit / Combine) and its `placeholder`. Fast / Best quality appears only when more than one variant covers the current attachment count (i.e. 0 images). Variant is sent only when that control is visible. Remembered control prefs survive mode switches.
+- Any earlier result (Edit action), library image (**Use as base** → `/create/?tool=image&base=<assetId>`, consumed once), or upload can become the working image or a reference. Each edit is a new job; `parentAssetId` is set only for 1-image edits.
+- 2–4 attached images switch to **Combine** (`image-reference`) automatically. One workflow covers 2–4; unused trailing slots are **detached** at patch time so example/placeholder images are never fed. Video from an image result remains an "Animate" action once LTX recipes exist.
+- No LLM router. No `promptRefs` token rewrite for v1 (users write natural language, e.g. "image 1 in the scene of image 2").
+- Input images: user uploads via `POST /api/uploads` (stored as Studio assets); at run time the worker POSTs bytes to ComfyUI `/upload/image` as `studio/<jobId>_<n>.png`.
+- **Aspect ratio** is a user control for Create (Fast and Best), Edit, and Combine — same four presets (multiples of 16). Edit does **not** lock to the input image's aspect; the user may change framing via `IN_SIZE`.
+- Klein graphs keep the **prompt upsampler ON** (`Upsampler on/off` switch `true`) for quality/edit/reference.
+- Every image run counts as **1** against the daily image limit regardless of mode or attachment count. Max **4** reference images.
+- Z-Image and Klein are different model families, so alternating Fast ↔ Best can reload a model. Watch `warm` in `flows:smoke` / admin run log; a later scheduler may group by family.
+- Capabilities are driven by the recipes present. Modes expose `label`, `placeholder`, controls, and variants; `attachments.max` is the highest `inputImages.max` among modes for that tool (4 for image today).
 
 ### 8.4 Recipes (the ComfyUI contract)
 
-- One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (the "Export (API)" file from ComfyUI) and `manifest.json` (id, tool `image`|`video`, `timeoutSeconds`, **`match`** `{ tool, inputImages:{min,max}, variant? }`, params with text/enum targets + presentation fields, seed target, output title + prefix field). Path from env `RECIPES_DIR` (default `./recipes`).
-- **Match + presentation:** each param has `label`, optional lucide `icon` (kebab-case), `group` `primary`|`settings`; enum options have `label` and optional `icon`. `sizes` and `target` stay server-only and never appear in `GET /capabilities`. Boot rejects overlapping `(tool, imageCount, variant)` matches; when several variants cover the same image count, exactly one must have `default: true`.
-- **Nodes are found by title, never by id.** Title convention: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `OUT_IMAGE`, `OUT_VIDEO`. Node ids are opaque strings (e.g. `"57:8"`). At boot `loadRecipes` validates both JSON files with Zod, builds a title → nodeId index, and refuses to start if any manifest title is missing, duplicated, or missing a target input field.
-- Everything not in the manifest stays locked in the file (steps, cfg, sampler, models, `batch_size`). `patchGraph` structuredClones the stored graph, writes only allowed params, fills enum defaults, sets a fresh random seed (`crypto.randomInt`, below 2**48) and `filename_prefix = studio/<jobId>`, and returns resolved values (e.g. width/height). It never mutates the recipe on disk.
-- `image-create-fast` (Z-Image-Turbo) is live: `match` `{ tool:image, inputImages:{0,0}, variant:{id:fast,label:"Fast",icon:zap,default:true} }`; aspect ratio options Square 1:1 / Portrait 4:5 / Landscape 16:9 / Story 9:16.
+- One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (ComfyUI **Workflow → Export (API)**) and `manifest.json`. Path from env `RECIPES_DIR` (default `./recipes`). Partner-node templates ("Flux 3 Image: Text to Image" / "Image Edit") are not used — Comfy starts with `--disable-api-nodes`.
+- **Manifest shape:** `id`, `tool`, `timeoutSeconds`, **`match`** `{ tool, inputImages:{min,max}, label, placeholder, variant? }`, `params` (text/enum with presentation + targets), `seed`, `output`, optional **`images`**: `[{ title, field, detach? }]` where `detach` is `[{ title, input }]` for unused trailing slots. Boot: `images.length === inputImages.max`; slots at index ≥ `min` must declare `detach`; required slots must not. Overlap / default-variant rules unchanged.
+- **Match + presentation:** each param has `label`, optional lucide `icon` (kebab-case), `group` `primary`|`settings`; enum options have `label` and optional `icon`. `sizes` and `target` stay server-only and never appear in `GET /capabilities`. Mode `label` / `placeholder` are public.
+- **Nodes are found by title, never by id.** Titles: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `IN_IMAGE_BATCH`, `IN_REFERENCES`, `OUT_IMAGE` (and `OUT_VIDEO` later). Node ids may look like `"57:8"` or `"128:107"`. Boot refuses missing/duplicate titles or missing target fields.
+- **`patchGraph(recipe, { jobId, values, inputs? })`:** structuredClone; write params; write each attached LoadImage `field` to the Comfy-stored filename; for unused trailing slots apply `detach` (rebuild that node's `inputs` without those keys); fresh seed (`crypto.randomInt`, exclusive upper bound 2**48); `filename_prefix = studio/<jobId>`; return resolved values. Never mutates disk.
+- **Live image recipes:**
+
+| Recipe id | timeoutSeconds | match | Notes |
+|---|---|---|---|
+| `image-create-fast` | 120 | 0 images · Create · variant `fast` (default, icon zap) | Z-Image-Turbo; `IN_PROMPT` is `CLIPTextEncode.text` |
+| `image-create-quality` | 240 | 0 images · Create · variant `best` (icon sparkles) | Klein BF16 T2I; upsampler on; `IN_PROMPT` is `PrimitiveStringMultiline.value` |
+| `image-edit` | 240 | 1 image · Edit · no variant | Klein I2I; `images: [IN_IMAGE_1]`; aspect via `IN_SIZE`; upsampler on |
+| `image-reference` | 300 | 2–4 images · Combine · no variant | One graph; `IN_IMAGE_1…4` + detach on slots 3–4 targeting `IN_IMAGE_BATCH` / `IN_REFERENCES`; aspect via `IN_SIZE`; upsampler on |
+
+Aspect presets (all multiples of 16): 1:1 → 1024×1024 · 4:5 → 896×1120 · 16:9 → 1344×768 · 9:16 → 768×1344. Prompt `maxLength` 1000 on every image recipe.
+
+**Fast (Z-Image) title map:**
 
 | Title | Class | Backend writes |
 |---|---|---|
-| `IN_PROMPT` | CLIPTextEncode | `text` (param `prompt`, maxLength 1000) |
-| `IN_SIZE` | EmptySD3LatentImage | `width`, `height` from `aspectRatio` enum (1:1 → 1024×1024, 4:5 → 896×1120, 16:9 → 1344×768, 9:16 → 768×1344; all multiples of 16). `batch_size` stays 1 |
-| `IN_SAMPLER` | KSampler | `seed` (fresh per job). Locked: steps 8, cfg 1, `res_multistep`, `simple` |
-| `OUT_IMAGE` | SaveImage | `filename_prefix` = `studio/<jobId>` |
+| `IN_PROMPT` | CLIPTextEncode | `text` |
+| `IN_SIZE` | EmptySD3LatentImage | `width`, `height` from `aspectRatio` |
+| `IN_SAMPLER` | KSampler | `seed` (locked: steps 8, cfg 1, `res_multistep`, `simple`) |
+| `OUT_IMAGE` | SaveImage | `filename_prefix` |
 
-- ComfyUI endpoints used by the client: `POST /prompt` (with `client_id` + caller-chosen `prompt_id`) · WebSocket `/ws?clientId=` · `GET /history/{id}` · `GET /view` · `POST /interrupt` · `GET /queue` · `POST /queue` (delete prompt ids) · `GET /system_stats`. Upload (`POST /upload/image`) comes later with edit/reference recipes.
-- Unlike the original idea of exposing templates, no user-built workflows exist. Adding a capability = authoring a graph in ComfyUI (admin), exporting API format, titling nodes, writing a manifest. If a graph needs a custom node, the engine image is rebuilt (custom nodes are not user-installable).
-- Failures from ComfyUI become generic engine codes only: `ENGINE_UNAVAILABLE`, `ENGINE_TIMEOUT`, `ENGINE_FAILED`, `ENGINE_CANCELLED`, `ENGINE_BAD_OUTPUT`. Full Comfy detail goes to the logger only, never into user-visible messages.
+**Klein quality / edit / reference (typical):** `IN_PROMPT` → `PrimitiveStringMultiline.value`; `IN_SIZE` → `EmptyFlux2LatentImage` width/height; `IN_SAMPLER` → `KSampler.seed` (quality often 8 steps; edit/ref 16; cfg 1, euler/simple — locked in graph); `OUT_IMAGE` → SaveImage; edit/ref also `IN_IMAGE_n` → LoadImage.`image`. Reference also titles `IN_IMAGE_BATCH` (`BatchImagesNode`) and `IN_REFERENCES` (`ReferenceMultiLatent`) for detach only. Reference latents still resize each attached image to ~1 MP inside the graph; output canvas size is the user's aspect preset.
+
+- ComfyUI endpoints: `POST /prompt` · WebSocket `/ws?clientId=` · `GET /history/{id}` · `GET /view` · `POST /interrupt` · `GET /queue` · `POST /queue` (delete) · `GET /system_stats` · **`POST /upload/image`** (FormData: `image`, `type=input`, `overwrite=true`, `subfolder`).
+- Adding a capability = author graph in ComfyUI (admin), BF16 loaders, title nodes, Export (API), write manifest. Custom nodes require an engine image rebuild.
+- Failures → `ENGINE_UNAVAILABLE` | `ENGINE_TIMEOUT` | `ENGINE_FAILED` | `ENGINE_CANCELLED` | `ENGINE_BAD_OUTPUT` only for users. Full Comfy detail stays in logs.
 
 ### 8.4.1 ComfyUI client (`src/comfy/`)
 
-Self-contained module; the only Studio code that talks to ComfyUI. Must not import telemetry, Express, Mongo or db code. Uses Node's built-in `fetch` and `WebSocket` (no extra runtime dependency for the client). Depends on `sharp` only in the queue layer for thumbnails, not here.
+Self-contained module; the only Studio code that talks to ComfyUI. Must not import telemetry, Express, Mongo or db code. Uses Node's built-in `fetch`, `WebSocket`, and `FormData`/`Blob` for uploads. `sharp` stays in queue/upload layers, not here.
 
-- **Interfaces (tests use fakes):** `ComfyHttp` (submit / history / view / interrupt / queue → `{running,pending}` prompt ids / `clearPrompt` / ping) · `ComfyEvents` (subscribe by `prompt_id` / `isConnected`).
+- **Interfaces (tests use fakes):** `ComfyHttp` (submit / history / view / interrupt / queue → `{running,pending}` / `clearPrompt` / ping / **`uploadImage({ bytes, filename, subfolder })` → stored name**) · `ComfyEvents` (subscribe by `prompt_id` / `isConnected`).
 - **Socket:** one persistent WebSocket per process, one `clientId`, auto-reconnect with capped backoff; `onConnected` fires on reconnect (not the first open) so warm-up can re-arm; `close()` clears the reconnect timer. Ignores binary preview frames; Zod-parses known text frames; unknown/malformed frames logged at debug and dropped.
 - **`runComfyPrompt`:** subscribe before submit (client supplies `prompt_id`) → hooks (`onSubmitted`, `onCached` with `{nodeId,nodeClass,nodeTitle?}`, `onNodeStart`, `onProgress`) → finish on `execution_success` / `executing` null → read history + `/view` for the `OUT_IMAGE` node (bytes in memory). Safety net: poll history every 5 s. Timeout (manifest `timeoutSeconds`) or `AbortSignal` → `/interrupt` then `ENGINE_TIMEOUT` / `ENGINE_CANCELLED`.
-- **Factory:** `createComfy({ env, logger, onReconnect? })` → `{ recipes, run, collect(recipeId, promptId), queue, interrupt, clearPrompt, ping, close }` (`run` = `patchGraph` + `runComfyPrompt`; `collect` = history + `collectOutputFromHistory` for boot recovery).
-- **Smoke:** `npm run comfy:smoke` → `scripts/comfy-smoke.ts` hits the real engine and wires real telemetry in the script only (`--prompt`, `--aspect`, `--repeat`, `--verbose`, `--cancel-after`). Saves PNGs under `./tmp/smoke/` (`tmp/` gitignored). Ends with `telemetry.flush()` then `comfy.close()` then `process.exit(0)`.
+- **Factory:** `createComfy({ env, logger, onReconnect? })` → `{ recipes, run, collect, queue, interrupt, clearPrompt, ping, close }`. **`run(recipeId, { jobId, values, inputImages?, hooks, signal })`** uploads each input as `studio/<jobId>_<n>.png`, passes filenames (+ width/height) into `patchGraph`, then `runComfyPrompt`. Upload failure → `ENGINE_UNAVAILABLE` or `ENGINE_FAILED` by cause.
+- **Smoke:** `npm run comfy:smoke` (single Fast recipe) · **`npm run flows:smoke`** → `scripts/flows-smoke.ts`: one throwaway user; fast → best → edit (uses fast output) → reference-2/3/4 (fast + uploaded PNGs); saves under `./tmp/smoke/flows/`; prints mode / runMs / warm / mem / swap / size; cleans up and exits.
 
 ### 8.5 Queue, limits, events and composition
 
 #### 8.5.1 Composition root (`src/compose.ts`)
 
-`compose()` builds and returns everything: validated env, logger, Mongo, `ensureIndexes` for all collections (including `audit_logs`), `MongoMetricsStore.ensureIndexes()`, repositories, `createComfy`, telemetry (Mongo store + `SystemSampler`), event hub, `LimitsService`, queue worker, `GenerationService`, and HTTP services (`CapabilitiesService`, `ThreadService`, `GenerationQueryService`, `FilesService`, `LibraryService`, `AdminStudioService`) as `api`. `server.ts` calls `compose()`, passes `api` into `createApp`, starts `worker.start()`, and on SIGTERM/SIGINT: stop claims → wait up to 30 s for the running job → `telemetry.flush()` → `comfy.close()` → hub close → `closeMongo()`.
+`compose()` builds and returns everything: validated env, logger, Mongo, `ensureIndexes` for all collections (including `audit_logs`), `MongoMetricsStore.ensureIndexes()`, repositories, `createComfy`, telemetry (Mongo store + `SystemSampler`), event hub, `LimitsService`, queue worker, `GenerationService`, `UploadService`, and HTTP services (`CapabilitiesService`, `ThreadService`, `GenerationQueryService`, `FilesService`, `LibraryService`, `uploads`, `AdminStudioService`) as `api`. `server.ts` calls `compose()`, passes `api` into `createApp`, starts `worker.start()`, and on SIGTERM/SIGINT: stop claims → wait up to 30 s for the running job → `telemetry.flush()` → `comfy.close()` → hub close → `closeMongo()`.
 
 #### 8.5.2 Limits (`src/limits/`)
 
 - **Defaults** (`defaults.ts`): image 100 / video 10 daily runs; per user 1 running + 3 queued; global queued cap 30. Merged with `settings.limits` overrides.
 - **Day key:** `YYYY-MM-DD` in `STUDIO_TIMEZONE` (IANA, default UTC).
 - **`reserveRun(userId, tool)`:** atomic `findOneAndUpdate` on `usage_daily` that increments `runs` only while `runs < dailyRuns` (upsert-safe; duplicate-key race retried).
-- **Refund (−1 run)** when: job cancelled while still `queued`; or job fails with `ENGINE_FAILED` | `ENGINE_UNAVAILABLE` | `ENGINE_BAD_OUTPUT`. Cancel while running or a finished job counts (no refund).
+- **Refund (−1 run)** when: job cancelled while still `queued`; or job fails with `ENGINE_FAILED` | `ENGINE_UNAVAILABLE` | `ENGINE_BAD_OUTPUT` | **`INVALID_INPUT`** (e.g. missing input file at run time). Cancel while running or a finished job counts (no refund).
 - **On job end:** add `runMs/1000` to `gpuSeconds`.
 - **`checkSubmit`:** throws typed `AppError` with only `QUOTA_DAILY` | `QUOTA_ACTIVE` | `QUEUE_FULL` (also in `@studio/shared` error codes). `remaining(userId)` → per tool `{ dailyRuns, used, remaining }`.
-- Other product limits still planned for HTTP: prompt ≤1,000 chars (enforced in `GenerationService` Zod), ≤4 input assets, upload size, fixed size/duration presets, per-job Comfy timeout from the recipe manifest.
+- Enforced product limits: prompt ≤1,000 chars · ≤4 `inputAssetIds` · uploads jpeg/png/webp ≤10 MB (longest side ≤2048 after sanitize) · fixed aspect presets · per-job Comfy timeout from the recipe manifest · uploads rate limit 30/min/user.
 
 #### 8.5.3 Scheduler and worker (`src/queue/`)
 
 - **Scheduler** (`scheduler.ts`, pure): `orderQueue(queued, lastServedAt)` → images before videos; within a tool band, least-recently-served user first (round-robin); within a user, oldest `timings.queuedAt` first. Index 0 is next; index+1 is the 1-based SSE position.
 - **One worker loop** (`worker.ts`): woken by an EventEmitter or a 2 s timer. Sets `busy` before any await so overlapping wakes cannot double-claim. Skips while `settings.enginePaused` or engine ping state is `unavailable`. Claims atomically (`queued` → `running`, `attempts++`).
 - **Engine monitor** (`engine-state.ts`): ping every `ENGINE_PING_INTERVAL_MS` (default 10_000) → `ready` | `unavailable`; `paused` overlays from settings; publishes `engine` events. Admin `PATCH /admin/engine` calls `setPaused` immediately (does not wait for the next ping) and wakes the worker.
-- **Run** (`run-job.ts`): `Map<jobId, AbortController>` for cancel; `comfy.run` with hooks → telemetry + hub. Stage from node class (`stage.ts`): `Sampler` → `generating`, `VAEDecode`/`Save*` → `finishing`, else `preparing`. Success writes file + sharp WebP thumb (`write-output.ts`), inserts asset, finishes job. Telemetry/publish failures never break the loop.
+- **Run** (`run-job.ts`): `Map<jobId, AbortController>` for cancel; load input asset bytes from disk; `comfy.run({…, inputImages })` with hooks → telemetry + hub. Stage from node class (`stage.ts`): `Sampler` → `generating`, `VAEDecode`/`Save*` → `finishing`, else `preparing`. Success writes file + sharp WebP thumb (`write-output.ts`), inserts asset, finishes job. Telemetry/publish failures never break the loop.
 - **Cancel** (`cancel.ts`): queued → `cancelled` immediately + refund; running → abort controller (Comfy `/interrupt`), ends as `cancelled` (no refund).
 - **Recovery** (`recovery.ts`) at boot for each `running` job: history has output → `comfy.collect` + finish `done`; Comfy still holds the prompt → interrupt/clear + requeue; else requeue if `attempts < 2`, otherwise fail `ENGINE_FAILED` + refund. If Comfy is unreachable, leave jobs alone (worker will not claim while unavailable).
 - **Warm-up** (`warm-up.ts`): once at boot and after socket reconnect, when idle and nothing queued, one throwaway `image-create-fast` run (no job row, no usage, no telemetry). Awaited cancel before a real claim so `/interrupt` cannot kill the user job. Skipped if a real job arrives first.
@@ -260,12 +277,17 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 
 #### 8.5.5 Generation service
 
-`GenerationService.createGeneration(userId, threadId, input)`: Zod-validate `{ tool, prompt, values, variant?, inputAssetIds }` → `pickRecipe` / `pickMode` against loaded recipe `match` fields (SOT table in 8.3; only `image-create-fast` exists on disk today) → `checkSubmit` → `reserveRun` → insert job → wake worker → `job.queued`. Unsupported attachment/recipe combo → `UNSUPPORTED_COMBINATION`. HTTP wraps this via `GenerationQueryService` (202 + `toUserJob`, cancel via `worker.cancel`, first-prompt thread title).
+`GenerationService.createGeneration(userId, threadId, input)`: Zod-validate `{ tool, prompt, values, variant?, inputAssetIds }` → validate each input asset (owner, kind `image`, not deleted; wrong count for tool → `UNSUPPORTED_COMBINATION`; bad asset → `INVALID_INPUT`) → `pickRecipe` / `pickMode` (SOT table in 8.3; four image recipes on disk) → `checkSubmit` → `reserveRun` → insert job (`parentAssetId` only when exactly one input) → wake worker → `job.queued`. User job DTO exposes `inputAssetIds`, never `recipeId`. HTTP wraps this via `GenerationQueryService` (202 + `toUserJob`, cancel via `worker.cancel`, first-prompt thread title).
 
-#### 8.5.6 Smoke
+#### 8.5.6 Uploads
+
+`UploadService` + `POST /api/uploads`: auth required; multipart field `file` via **multer** (memory, 10 MB); rate limit 30/min/user. `sanitizeUploadImage` (sharp): reject non jpeg/png/webp or unreadable → `UPLOAD_INVALID`; oversize → `UPLOAD_TOO_LARGE`; apply EXIF rotation; strip metadata; downscale longest side to 2048; write PNG + WebP thumb (512) under `DATA_DIR/<userId>/`; insert asset (`source: upload`, kind image); return asset DTO. Library `GET /library?source=generated|upload` defaults to **`generated`** so the main library stays generations; the attach picker can request uploads.
+
+#### 8.5.7 Smoke
 
 - `npm run queue:smoke` → `scripts/queue-smoke.ts`: real Mongo + real engine; two throwaway users; A×3 + B×1 via `GenerationService`; prints queue order, every hub event, final statuses, `job_metrics` (including `warm`); deletes users/files; exits by itself. Stop any other Studio backend (`dev`) first so two workers do not share the queue.
 - `npm run api:smoke` → `scripts/api-smoke.ts`: against a running server (`http://127.0.0.1:4001`); `SMOKE_EMAIL` / `SMOKE_PASSWORD`; login → capabilities → create thread → one generation → SSE until `job.done` → download file → print summary → exit.
+- `npm run flows:smoke` → `scripts/flows-smoke.ts`: real Mongo + engine; one throwaway user; runs Fast, Best, Edit, reference-2/3/4; writes PNGs to `./tmp/smoke/flows/`; prints timing/warm/memory table; cleans up; exits.
 
 ### 8.6 Data model (MongoDB, database `studio`)
 
@@ -281,18 +303,18 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 
 ### 8.7 API surface (`/api`)
 
-Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; admin job DTO includes `recipeId`. Capabilities are built from loaded recipes (new recipe folder → new mode, no route change); serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words.
+Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; includes `inputAssetIds` and optional `parentAssetId`. Admin job DTO includes `recipeId`. Capabilities modes expose `label`, `placeholder`, `inputImages`, optional `variant`, and `controls`; tool `attachments.max` is derived from recipes. Serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words (no-leak test covers all image modes). Shared error codes include `INVALID_INPUT`, `UPLOAD_TOO_LARGE`, `UPLOAD_INVALID` (friendly copy on the frontend).
 
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/logout` · `GET /me` |
-| Capabilities | `GET /capabilities` (product, engine state, tools/modes/controls, per-tool quota remaining, activeCap) |
+| Capabilities | `GET /capabilities` (product, engine state, tools/modes/controls/labels/placeholders, per-tool quota remaining, activeCap) |
 | Threads | `POST /threads` · `GET /threads` (cursor, newest first) · `GET /threads/:id` (thread + items `[{job,assets}]`) · `DELETE /threads/:id` (soft delete + unlink asset files) |
 | Generate | `POST /threads/:id/generations` (202 + job; rate limit 30/min/user) · `GET /generations/:id` · `DELETE /generations/:id` (cancel) |
-| Uploads | `POST /uploads` (images; validated and re-encoded) — not wired |
+| Uploads | `POST /uploads` (multipart `file`; jpeg/png/webp ≤10 MB; sanitize + PNG; rate 30/min/user) |
 | Live | `GET /events` (SSE; event shapes in `@studio/shared`) |
 | Files | `GET /files/:assetId` (`?thumb=1`, `?download=1`; `Cache-Control: private, immutable`; path from DB only) · `DELETE /assets/:id` (owner or admin) |
-| Library | `GET /library?kind=image\|video&cursor&limit` (own, not deleted) |
+| Library | `GET /library?kind=image\|video&source=generated\|upload&cursor&limit` (own, not deleted; **default source `generated`**) |
 | Admin | `GET/PATCH /admin/users` · `GET /admin/jobs` · `GET /admin/runs` · `GET /admin/runs/:jobId` · `GET/PATCH /admin/engine` · `GET/PATCH /admin/settings` |
 
 Production static serve: `apps/studio/frontend/out` via `mountFrontendStatic` (trailingSlash page fallbacks, no SPA catch-all over `/api`, CSP as in §8.10 / helmet).
@@ -303,25 +325,26 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.9 Hiding the engine
 
-- The API and UI use only product wording ("Fast", "Best quality", "Edit"). No model names, node names or workflow names ever leave the backend.
-- ComfyUI errors are replaced by the generic `ENGINE_*` codes (section 8.4) for users and logged in full for the admin.
-- Output files carry no embedded workflow (`--disable-metadata`); files are re-encoded on download if needed.
+- The API and UI use only product wording ("Fast", "Best quality", "Create", "Edit", "Combine"). No model names, node names, workflow or recipe ids ever leave the backend.
+- ComfyUI errors are replaced by the generic `ENGINE_*` codes (section 8.4) for users and logged in full for the admin. Upload failures use `UPLOAD_*` / `INVALID_INPUT` with friendly frontend copy.
+- Output files carry no embedded workflow (`--disable-metadata`); uploads are re-encoded to PNG (metadata stripped).
 - Check each model license's attribution wording before dropping credit everywhere (Klein and LTX terms).
 
 ### 8.10 UI
 
-- Screens: Login · Request account (with a pending-approval state) · Home (greeting, composer, recent) · Create image (thread) · Create video (thread) · My Generations (All / Images / Videos; download, delete) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
+- Screens: Login · Request account (with a pending-approval state) · Home (greeting, composer, recent) · Create image (thread) · Create video (thread; when recipes exist) · Library / My Generations (All / Images / Videos; download, delete, **Use as base**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
+- **Composer (mode-driven, no per-recipe UI code):** single shell — attachments (when any) + autosize prompt + toolbar. Attachment count + optional variant → `pickMode` → mode chip beside thumbs, placeholder, and only that mode's controls. Toolbar: attach (+), fan-out aspect pill, Fast/Best quality pill (hidden/disabled with images), quota meta, circular send (Enter submits). Sources = device upload, drag-and-drop, paste, (library picker can use `source=upload|generated`). Client type/size checks for fast feedback; server is authority. Working image is the first attachment (section 8.3). Generation cards: "Based on" strip from `inputAssetIds`; actions Edit / Add as reference (disabled at limit) / Download / Regenerate (keeps prompt, values, variant, **and** `inputAssetIds`) / Copy prompt / Delete. Every mode costs one run.
 - The mockup's separate per-tool pages collapse into the two thread composers above. Removed from the mockup: the model dropdown and "Model" field, Google/SSO login, the Audio to Audio tile (until a recipe exists), "approval email" copy.
-- Stack: Next.js static export (`output: 'export'`, `trailingSlash`, one `/create/` page reading `?tool=` because static export cannot pre-build dynamic tool routes) · Tailwind v4 · Radix (`radix-ui`) · Motion · lucide · TanStack Query · react-hook-form + Zod · `next-themes` (light/dark/system, no flash) · `sonner` toasts · self-hosted Inter Variable. No external assets; strict CSP.
+- Stack: Next.js static export (`output: 'export'`, `trailingSlash`, one `/create/` page reading `?tool=` and optional `?base=` / `?thread=`) · Tailwind v4 · Radix (`radix-ui`) · Motion · lucide · TanStack Query · react-hook-form + Zod · `next-themes` (light/dark/system, no flash) · `sonner` toasts · self-hosted Inter Variable. No external assets; strict CSP.
 
 ### 8.11 Run and status
 
-- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke` · `npm run api:smoke`.
+- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke` · `npm run api:smoke` · **`npm run flows:smoke`**.
 - **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`, `STUDIO_TIMEZONE` (IANA, default UTC), `RETENTION_DAYS` (default 30), `ENGINE_PING_INTERVAL_MS` (default 10000). All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`). Smoke: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, optional `SMOKE_BASE_URL`.
-- **Storage:** results under `DATA_DIR/<userId>/` (PNG + `.thumb.webp`); retention soft-delete after `RETENTION_DAYS`. Smoke PNGs under `./tmp/smoke/` (gitignored; not product storage). Dependency: `sharp` (linux-arm64 prebuilt) for thumbnails.
-- **Status (2026-10-30):** ComfyUI isolation verified; auth + admin live; Comfy client + `image-create-fast` live; job pipeline live; **HTTP public contract live** (capabilities, threads, generations, SSE `/events`, files, library, admin jobs/runs/engine/settings; `@studio/shared` DTOs + `pickMode`; static export serving with trailingSlash fallbacks). **Frontend create/library/SSE/notifications live** (product name Family Studio). **Not yet:** uploads; Klein/LTX recipes; attachments/working-image chip.
-- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy, manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Frontend Vitest: control-state, error copy, notification decisions, SSE cache updater. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke` on the Spark (stop extra workers before queue smoke; `api:smoke` needs `dev:backend` up).
-- **Next:** Klein edit/reference recipes → LTX video recipes → uploads / working-image chip.
+- **Storage:** results and uploads under `DATA_DIR/<userId>/` (`<assetId>.png` + `.thumb.webp`); retention soft-delete after `RETENTION_DAYS`. Smoke PNGs under `./tmp/smoke/` and `./tmp/smoke/flows/` (gitignored). Dependencies: `sharp` (linux-arm64 prebuilt) for thumbs/sanitize; **`multer`** for multipart uploads.
+- **Status (2026-10-31):** ComfyUI isolation verified; auth + admin live; job pipeline + telemetry live; **all four image recipes live** (`image-create-fast`, `image-create-quality`, `image-edit`, `image-reference` with detach); **uploads** (`POST /uploads`) + library `?source=`; Comfy `uploadImage` + worker input wiring; **frontend** mode-driven composer, attachment tray, working-image chip, Based on / Edit / Add as reference / Use as base, regenerate keeps inputs. HTTP contract includes capabilities labels/placeholders. **Not yet:** LTX video recipes; video UI; scheduler grouping by model family; upscaling recipes.
+- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy (including image patch + detach), manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak, upload sanitiser, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Frontend Vitest: control-state, attachment reducer, paste/drop helper, error copy (incl. `UPLOAD_*`), notification decisions, SSE cache updater. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke`, **`flows:smoke`** on the Spark (stop extra workers before queue/flows smoke; `api:smoke` needs `dev:backend` up).
+- **Next:** LTX video recipes (text / image / first-last) → timing matrix for video quotas → optional scheduler by model family → upscaling (needs custom nodes).
 
 ### 8.12 Telemetry (per-job metrics)
 
@@ -358,30 +381,29 @@ apps/studio/
 │   ├── package.json · tsconfig.json · tsconfig.build.json
 │   ├── eslint.config.mjs · vitest.config.ts · .env.example
 │   ├── recipes/
-│   │   └── image-create-fast/
-│   │       ├── manifest.json
-│   │       └── workflow.api.json
+│   │   ├── image-create-fast/     manifest.json · workflow.api.json
+│   │   ├── image-create-quality/  manifest.json · workflow.api.json
+│   │   ├── image-edit/            manifest.json · workflow.api.json
+│   │   └── image-reference/       manifest.json · workflow.api.json
 │   ├── scripts/
-│   │   ├── seed-admin.ts
-│   │   ├── telemetry-demo.ts
-│   │   ├── comfy-smoke.ts
-│   │   ├── queue-smoke.ts
-│   │   └── api-smoke.ts
+│   │   ├── seed-admin.ts · telemetry-demo.ts
+│   │   ├── comfy-smoke.ts · queue-smoke.ts · api-smoke.ts · flows-smoke.ts
 │   ├── src/
 │   │   ├── server.ts · app.ts · compose.ts
 │   │   ├── config/env.ts
 │   │   ├── routes/        auth · admin · admin-studio · health · capabilities
-│   │   │                  threads · generations · events · files · library
+│   │   │                  threads · generations · events · files · library · uploads
 │   │   ├── controllers/   auth · admin-users · admin-studio · health
 │   │   │                  capabilities · threads · generations · events
-│   │   │                  files · library
+│   │   │                  files · library · uploads
 │   │   ├── services/      auth · session · admin-users · admin-studio
 │   │   │                  generation · generation-query · pick-recipe
-│   │   │                  capabilities · thread · files · library
+│   │   │                  capabilities · thread · files · library · upload
+│   │   ├── uploads/       sanitize-image.ts
 │   │   ├── mappers/       job · asset · thread · admin-run
 │   │   ├── middleware/    session · require-auth · validate · security · origin-check
-│   │   │                  rate-limits · request-logger · error-handler · not-found
-│   │   │                  frontend-static
+│   │   │                  rate-limits (incl. uploads 30/min) · request-logger
+│   │   │                  error-handler · not-found · frontend-static
 │   │   ├── db/            mongo.ts · indexes.ts · documents.ts
 │   │   │   └── repositories/  user · session · thread · job · asset · usage-daily
 │   │   │                      settings · audit · mongo-* counterparts
@@ -401,7 +423,7 @@ apps/studio/
 │   │   │   └── store/     types · memory-store · mongo-store
 │   │   └── comfy/         (only code that talks to ComfyUI)
 │   │       ├── index.ts · create-comfy.ts · types.ts · errors.ts
-│   │       ├── http.ts · socket.ts · ws-messages.ts
+│   │       ├── http.ts (incl. uploadImage) · socket.ts · ws-messages.ts
 │   │       ├── run-prompt.ts · run-prompt-handlers.ts
 │   │       ├── resolve-node.ts · collect-output.ts
 │   │       └── recipes/   manifest-schema · graph-schema · recipe
@@ -413,8 +435,9 @@ apps/studio/
 │       ├── routes/        studio-api
 │       ├── shared/        pick-mode
 │       ├── mappers/       job
+│       ├── uploads/       sanitize-image
 │       ├── telemetry/     …
-│       ├── comfy/         … · match-validation
+│       ├── comfy/         … · match-validation · patch-graph-images
 │       ├── queue/         scheduler · worker
 │       ├── limits/        limits.service
 │       ├── events/        hub
@@ -439,7 +462,9 @@ apps/studio/
         ├── features/
         │   ├── auth/      api · hooks · schemas · forms · guards
         │   ├── create/    api · hooks · control-state · composer · generation cards
-        │   ├── library/   api · hooks · library-page · grid
+        │   │              attachments/ (types · reducer · tray · enqueue-uploads
+        │   │              extract-image-files · working-image-storage)
+        │   ├── library/   api · hooks · library-page · grid (Use as base)
         │   ├── admin/     api · hooks · users · engine · admin-shell
         │   ├── events/    apply-event · use-studio-events · job-live
         │   └── notifications/  decisions · sound · title · provider · controls
@@ -506,10 +531,16 @@ apps/studio/
 | Studio queue in MongoDB with one worker loop, no Redis/BullMQ | Scale is small; ComfyUI's own queue has no users, quotas or priorities, so ours must be the control point |
 | Workflows are API-format JSON per recipe; nodes found by title, not id | Survives re-exports and renumbering; boot-time check catches drift |
 | One pipeline for create and edit: recipe resolver chooses by attached images, shown to the user as an explicit "working image" chip | Users never pick a workflow; deterministic, no LLM router latency or error |
+| Image recipes: Fast (Z-Image) + Best / Edit / Combine (Klein BF16 API exports) | Product presets without exposing models; Combine is one graph with detach, not three folders |
 | Studio is its own app with its own database, auth and port 4001 | No risk to the live bot; extract shared auth later |
 | `apps/studio` uses npm workspaces with `@studio/shared` (Zod schemas) | Request and response shapes are written once and checked on both sides |
 | Studio served tailnet-only (`tailscale serve`), never Funnel | Staff tool; no public exposure |
 | Studio accounts: free signup with admin approval, no SSO | Matches the bot's model; no internet dependency |
+| One `image-reference` recipe for 2–4 images with manifest `detach` on unused slots | Avoids three near-duplicate graphs; unused LoadImages are unlinked so placeholders never feed the model |
+| Klein prompt upsampler left ON for quality / edit / reference | Matches distilled Klein authoring defaults for v1 quality |
+| Edit exposes the same aspect-ratio presets as Create (user-writable `IN_SIZE`) | Designers can reframe; earlier "snap to input aspect only" idea dropped |
+| Uploads: multer + sharp sanitize to PNG ≤2048, library `source` filter | Server is authority; attach picker can list uploads without mixing them into My Generations by default |
+| `flows:smoke` covers Fast / Best / Edit / ref-2/3/4 | Timing and warm rates for timeout tuning and model-thrash watch |
 
 ## 12. Open items
 
@@ -521,12 +552,11 @@ apps/studio/
 - Domain name for Cloudflare Tunnel.
 - Backup target for MongoDB (bot and Studio) and Studio files.
 - Final model choice via evals.
-- Studio: HTTP routes for generations / SSE (`GET /events`) / files / library / capabilities; wire controllers to `GenerationService`, hub and cancel.
-- Studio: attachments / working-image chip and uploads UI.
-- Studio: timing table for LTX-2.5 text-to-video (resolutions × durations: seconds and peak memory) to set quotas and presets.
-- Studio: export API-format graphs with titled nodes for Klein text-to-image, edit, multi-reference and for the three LTX video modes; confirm size handling for edits.
-- Studio: product name, department list for signup; revisit daily budgets after the timing matrix.
+- Studio: run `flows:smoke` on the Spark and lock `timeoutSeconds` from the timing table; watch Fast↔Best `warm=false` rate.
+- Studio: export API-format graphs with titled nodes for the three LTX video modes (text / image / first-last); timing table (resolutions × durations) to set video quotas and presets.
+- Studio: revisit daily image/video budgets after the full timing matrix.
 - Studio: attribution wording required by the Klein and LTX licenses when model names are hidden.
 - Studio: scheduler improvement to group queued jobs by model family; measure bot slowdown during video jobs and decide when to pause video during bot busy hours.
 - Studio: upscaling recipes (image and video) need extra custom nodes and an engine image rebuild.
-- Cleanup: delete the unused base and int8 Flux workflow JSONs from `infra/comfyui/workflows/`; delete parked Wan 2.2 weights when disk space is needed.    
+- Studio: optional in-composer library picker UI (API already supports `source=`); soften composer remount clearing an in-progress prompt when refs change.
+- Cleanup: delete unused int8 Flux workflow JSONs from `infra/comfyui/workflows/` if still present; delete parked Wan 2.2 weights when disk space is needed.

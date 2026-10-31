@@ -12,6 +12,8 @@ const REQUIRED = [
   'ENGINE_UNAVAILABLE',
   'ENGINE_CANCELLED',
   'INVALID_INPUT',
+  'UPLOAD_TOO_LARGE',
+  'UPLOAD_INVALID',
 ] as const;
 
 describe('ERROR_COPY', () => {

@@ -97,6 +97,7 @@ export class MongoAssetRepository implements AssetRepository {
       deletedAt: { $exists: false },
     };
     if (opts.kind) filter.kind = opts.kind;
+    if (opts.source) filter.source = opts.source;
     if (opts.before && ObjectId.isValid(opts.before.id)) {
       filter.$or = [
         { createdAt: { $lt: opts.before.createdAt } },

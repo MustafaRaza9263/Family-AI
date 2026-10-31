@@ -21,6 +21,7 @@ export type RateLimiters = {
   loginIp: ReturnType<typeof rateLimit>;
   loginEmail: ReturnType<typeof rateLimit>;
   generations: ReturnType<typeof rateLimit>;
+  uploads: ReturnType<typeof rateLimit>;
 };
 
 export function createRateLimiters(): RateLimiters {
@@ -80,6 +81,19 @@ export function createRateLimiters(): RateLimiters {
       },
       handler: (req, res, next) =>
         rateLimitedHandler(req, res, next, 'Too many generations'),
+    }),
+    uploads: rateLimit({
+      windowMs: 60 * 1000,
+      max: 30,
+      standardHeaders: true,
+      legacyHeaders: false,
+      validate: { keyGeneratorIpFallback: false },
+      keyGenerator: (req) => {
+        const userId = req.auth?.user.id ?? req.ip ?? 'unknown';
+        return `uploads:${userId}`;
+      },
+      handler: (req, res, next) =>
+        rateLimitedHandler(req, res, next, 'Too many uploads'),
     }),
   };
 }

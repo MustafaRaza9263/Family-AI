@@ -1,4 +1,4 @@
-import type { AssetKind } from '../db/documents.js';
+import type { AssetKind, AssetSource } from '../db/documents.js';
 import type { AssetRepository } from '../db/repositories/asset-repository.js';
 import { decodeCursor, encodeCursor } from '../lib/cursor.js';
 import { AppError, ErrorCodes } from '../lib/errors.js';
@@ -9,7 +9,12 @@ export class LibraryService {
 
   async list(
     userId: string,
-    opts: { kind?: AssetKind; cursor?: string; limit: number },
+    opts: {
+      kind?: AssetKind;
+      source?: AssetSource;
+      cursor?: string;
+      limit: number;
+    },
   ) {
     const before = opts.cursor ? decodeCursor(opts.cursor) : null;
     if (opts.cursor && !before) {
@@ -18,6 +23,7 @@ export class LibraryService {
     const rows = await this.assets.listLibrary({
       userId,
       kind: opts.kind,
+      source: opts.source ?? 'generated',
       limit: opts.limit + 1,
       before: before
         ? { createdAt: before.at, id: before.id }

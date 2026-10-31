@@ -1,6 +1,7 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api-client';
@@ -9,14 +10,23 @@ import { ThreadView } from './thread-view';
 
 export function CreatePage() {
   const params = useSearchParams();
+  const router = useRouter();
   const toolParam = params.get('tool');
   const toolId = toolParam === 'video' ? 'video' : 'image';
   const threadId = params.get('thread') ?? undefined;
+  // Capture once at mount so stripping ?base= does not clear the seed.
+  const [baseAssetId] = useState(() => params.get('base') ?? undefined);
+
+  useEffect(() => {
+    if (!params.get('base')) return;
+    const next = new URLSearchParams(params.toString());
+    next.delete('base');
+    router.replace(`/create/?${next.toString()}`);
+  }, [params, router]);
 
   const caps = useCapabilities();
   const thread = useThread(threadId);
 
-  // Caps are usually already cached from the app shell — only wait if empty.
   if (!caps.data && (caps.isLoading || caps.isPending)) {
     return (
       <div className="space-y-4">
@@ -35,24 +45,24 @@ export function CreatePage() {
     );
   }
 
-  // New image: show composer immediately — no thread API until submit.
   if (!threadId) {
     return (
       <ThreadView
         toolId={toolId}
         thread={null}
         capabilities={caps.data}
+        initialBaseAssetId={baseAssetId}
       />
     );
   }
 
-  // Existing thread: paint from cache instantly when present.
   if (thread.data) {
     return (
       <ThreadView
         toolId={toolId}
         thread={thread.data}
         capabilities={caps.data}
+        initialBaseAssetId={baseAssetId}
       />
     );
   }

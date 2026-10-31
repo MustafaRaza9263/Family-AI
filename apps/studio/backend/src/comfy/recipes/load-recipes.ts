@@ -67,6 +67,26 @@ function assertTargetFields(
   }
 }
 
+function assertInputField(
+  recipeId: string,
+  graph: ApiGraph,
+  nodeId: string,
+  title: string,
+  field: string,
+): void {
+  const node = graph[nodeId];
+  if (!node) {
+    throw new Error(
+      `Recipe "${recipeId}": node id "${nodeId}" missing from graph`,
+    );
+  }
+  if (!(field in node.inputs)) {
+    throw new Error(
+      `Recipe "${recipeId}": node "${title}" (${nodeId}) missing input field "${field}"`,
+    );
+  }
+}
+
 function collectTargets(manifest: RecipeManifest): ParamTarget[] {
   const targets: ParamTarget[] = [manifest.seed.target];
   for (const param of Object.values(manifest.params)) {
@@ -94,6 +114,17 @@ function validateRecipe(
     fields: [manifest.output.prefixField],
   });
   titleToNodeId.set(manifest.output.title, outId);
+
+  for (const slot of manifest.images ?? []) {
+    const nodeId = requireUniqueTitle(manifest.id, slot.title, titleIndex);
+    assertInputField(manifest.id, graph, nodeId, slot.title, slot.field);
+    titleToNodeId.set(slot.title, nodeId);
+    for (const d of slot.detach ?? []) {
+      const detachId = requireUniqueTitle(manifest.id, d.title, titleIndex);
+      assertInputField(manifest.id, graph, detachId, d.title, d.input);
+      titleToNodeId.set(d.title, detachId);
+    }
+  }
 
   return titleToNodeId;
 }

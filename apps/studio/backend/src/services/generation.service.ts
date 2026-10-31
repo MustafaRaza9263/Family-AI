@@ -4,6 +4,7 @@ import type { EventHub } from '../events/hub.js';
 import type { Clock } from '../lib/clock.js';
 import { AppError, ErrorCodes } from '../lib/errors.js';
 import type { LimitsService } from '../limits/limits.service.js';
+import type { AssetRepository } from '../db/repositories/asset-repository.js';
 import type { JobRecord, JobRepository } from '../db/repositories/job-repository.js';
 import type { ThreadRepository } from '../db/repositories/thread-repository.js';
 import { orderQueue } from '../queue/scheduler.js';
@@ -23,6 +24,7 @@ export type CreateGenerationInput = z.infer<typeof createGenerationSchema>;
 export type GenerationServiceDeps = {
   jobs: JobRepository;
   threads: ThreadRepository;
+  assets: AssetRepository;
   limits: LimitsService;
   hub: EventHub;
   clock: Clock;
@@ -55,19 +57,35 @@ export class GenerationService {
       throw new AppError(404, ErrorCodes.NOT_FOUND, 'Thread not found');
     }
 
-    const picked = pickRecipe(
-      {
-        tool: input.tool,
-        variant: input.variant,
-        inputAssetIds: input.inputAssetIds,
-      },
-      this.deps.recipes,
-    );
+    await this.assertInputAssets(userId, input.inputAssetIds);
+
+    let picked;
+    try {
+      picked = pickRecipe(
+        {
+          tool: input.tool,
+          variant: input.variant,
+          inputAssetIds: input.inputAssetIds,
+        },
+        this.deps.recipes,
+      );
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        400,
+        ErrorCodes.UNSUPPORTED_COMBINATION,
+        'That combination of settings is not available',
+      );
+    }
 
     await this.deps.limits.checkSubmit(userId, picked.tool);
     await this.deps.limits.reserveRun(userId, picked.tool);
 
     const now = this.deps.clock.now();
+    // Only a single-image edit has a clear parent for lineage.
+    const parentAssetId =
+      input.inputAssetIds.length === 1 ? input.inputAssetIds[0] : undefined;
+
     let job: JobRecord;
     try {
       job = await this.deps.jobs.create({
@@ -79,7 +97,7 @@ export class GenerationService {
         prompt: input.prompt,
         params: input.values,
         inputAssetIds: input.inputAssetIds,
-        parentAssetId: input.inputAssetIds[0],
+        parentAssetId,
         queuedAt: now,
       });
     } catch (err) {
@@ -108,5 +126,45 @@ export class GenerationService {
 
     this.deps.wake();
     return job;
+  }
+
+  private async assertInputAssets(
+    userId: string,
+    ids: string[],
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    const assets = await this.deps.assets.findByIds(ids);
+    if (assets.length !== ids.length) {
+      throw new AppError(
+        400,
+        ErrorCodes.INVALID_INPUT,
+        'One or more input images were not found',
+      );
+    }
+    const byId = new Map(assets.map((a) => [a.id, a]));
+    for (const id of ids) {
+      const asset = byId.get(id);
+      if (!asset || asset.userId !== userId) {
+        throw new AppError(
+          400,
+          ErrorCodes.INVALID_INPUT,
+          'One or more input images were not found',
+        );
+      }
+      if (asset.deletedAt) {
+        throw new AppError(
+          400,
+          ErrorCodes.INVALID_INPUT,
+          'One or more input images were deleted',
+        );
+      }
+      if (asset.kind !== 'image') {
+        throw new AppError(
+          400,
+          ErrorCodes.INVALID_INPUT,
+          'Only image inputs are supported',
+        );
+      }
+    }
   }
 }

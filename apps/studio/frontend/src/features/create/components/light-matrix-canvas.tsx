@@ -8,6 +8,7 @@ const SPACING = 18;
 const BASE_RADIUS = 1.2;
 const LIGHT_SPEED = 0.014;
 const LIGHT_EASE = 0.035;
+const FOLLOW_EASE = 0.18;
 
 function noise(t: number): number {
   return (
@@ -38,19 +39,25 @@ function resolveRgb(
 export function LightMatrixCanvas({
   aspectRatio,
   width,
+  fill = false,
+  tone = 'primary',
   className,
   label,
 }: {
   aspectRatio?: string;
   /** Explicit CSS width — must match the final image display width. */
   width?: number;
+  /** Fill the parent box (parent sets size / aspect-ratio). */
+  fill?: boolean;
+  /** Dot color — danger for failed / cancelled. */
+  tone?: 'primary' | 'danger';
   className?: string;
   label?: string;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { w: aw, h: ah } = parseAspect(aspectRatio);
-  const boxW = width ?? mediaWidthFromAspect(aspectRatio);
+  const boxW = fill ? undefined : (width ?? mediaWidthFromAspect(aspectRatio));
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -68,13 +75,17 @@ export function LightMatrixCanvas({
     let cssW = 0;
     let cssH = 0;
     let lightRadius = 220;
+    let following = false;
     let dotRgb: [number, number, number] = [10, 132, 255];
     let bgRgb: [number, number, number] = [0, 0, 0];
     const light = { x: 0, y: 0, targetX: 0, targetY: 0 };
 
     const readTheme = () => {
       bgRgb = resolveRgb(wrap, 'var(--background)', [0, 0, 0]);
-      dotRgb = resolveRgb(wrap, 'var(--primary)', [10, 132, 255]);
+      dotRgb =
+        tone === 'danger'
+          ? resolveRgb(wrap, 'var(--danger)', [255, 69, 58])
+          : resolveRgb(wrap, 'var(--primary)', [10, 132, 255]);
     };
 
     const layout = () => {
@@ -90,10 +101,12 @@ export function LightMatrixCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       lightRadius = Math.max(cssW, cssH) * 0.55;
-      light.x = cssW / 2;
-      light.y = cssH / 2;
-      light.targetX = light.x;
-      light.targetY = light.y;
+      if (!following) {
+        light.x = cssW / 2;
+        light.y = cssH / 2;
+        light.targetX = light.x;
+        light.targetY = light.y;
+      }
 
       dots = [];
       const pad = SPACING;
@@ -105,6 +118,18 @@ export function LightMatrixCanvas({
       readTheme();
     };
 
+    const onPointerMove = (e: PointerEvent) => {
+      const r = wrap.getBoundingClientRect();
+      following = true;
+      light.targetX = e.clientX - r.left;
+      light.targetY = e.clientY - r.top;
+      if (reduced) draw();
+    };
+
+    const onPointerLeave = () => {
+      following = false;
+    };
+
     const draw = () => {
       if (disposed) return;
       if (cssW < 2 || cssH < 2) {
@@ -113,12 +138,15 @@ export function LightMatrixCanvas({
       }
 
       if (!reduced) {
-        noiseTimeX += LIGHT_SPEED;
-        noiseTimeY += LIGHT_SPEED * 0.8;
-        light.targetX = cssW / 2 + noise(noiseTimeX) * cssW * 0.8;
-        light.targetY = cssH / 2 + noise(noiseTimeY) * cssH * 0.8;
-        light.x += (light.targetX - light.x) * LIGHT_EASE;
-        light.y += (light.targetY - light.y) * LIGHT_EASE;
+        if (!following) {
+          noiseTimeX += LIGHT_SPEED;
+          noiseTimeY += LIGHT_SPEED * 0.8;
+          light.targetX = cssW / 2 + noise(noiseTimeX) * cssW * 0.8;
+          light.targetY = cssH / 2 + noise(noiseTimeY) * cssH * 0.8;
+        }
+        const ease = following ? FOLLOW_EASE : LIGHT_EASE;
+        light.x += (light.targetX - light.x) * ease;
+        light.y += (light.targetY - light.y) * ease;
       }
 
       const [br, bg, bb] = bgRgb;
@@ -151,6 +179,8 @@ export function LightMatrixCanvas({
       if (reduced) draw();
     });
     ro.observe(wrap);
+    wrap.addEventListener('pointermove', onPointerMove);
+    wrap.addEventListener('pointerleave', onPointerLeave);
     layout();
     draw();
 
@@ -158,21 +188,29 @@ export function LightMatrixCanvas({
       disposed = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
+      wrap.removeEventListener('pointermove', onPointerMove);
+      wrap.removeEventListener('pointerleave', onPointerLeave);
     };
-  }, [aspectRatio, boxW]);
+  }, [aspectRatio, boxW, fill, tone]);
 
   return (
     <div
       ref={wrapRef}
       className={cn(
-        'relative w-full overflow-hidden rounded-[var(--radius-control)] border border-border bg-background',
+        'relative overflow-hidden bg-background',
+        !fill &&
+          'w-full rounded-[var(--radius-control)] border border-border',
         className,
       )}
-      style={{
-        width: boxW,
-        maxWidth: '100%',
-        aspectRatio: `${aw} / ${ah}`,
-      }}
+      style={
+        fill
+          ? undefined
+          : {
+              width: boxW,
+              maxWidth: '100%',
+              aspectRatio: `${aw} / ${ah}`,
+            }
+      }
       aria-hidden={!label}
       aria-label={label}
       role={label ? 'img' : undefined}

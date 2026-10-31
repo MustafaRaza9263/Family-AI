@@ -60,7 +60,21 @@ export const matchSchema = z.object({
     .refine((r) => r.max >= r.min, {
       message: 'inputImages.max must be >= min',
     }),
+  label: z.string().min(1),
+  placeholder: z.string().min(1),
   variant: matchVariantSchema.optional(),
+});
+
+/** When this image slot is unused, drop these inputs so orphans are not fed. */
+export const imageDetachSchema = z.object({
+  title: z.string().min(1),
+  input: z.string().min(1),
+});
+
+export const recipeImageSchema = z.object({
+  title: z.string().min(1),
+  field: z.string().min(1),
+  detach: z.array(imageDetachSchema).optional(),
 });
 
 export const manifestSchema = z
@@ -75,6 +89,7 @@ export const manifestSchema = z
       title: z.string().min(1),
       prefixField: z.string().min(1),
     }),
+    images: z.array(recipeImageSchema).optional(),
   })
   .superRefine((manifest, ctx) => {
     if (manifest.match.tool !== manifest.tool) {
@@ -94,9 +109,50 @@ export const manifestSchema = z
         });
       }
     }
+
+    const images = manifest.images ?? [];
+    const { min, max } = manifest.match.inputImages;
+    if (images.length === 0) {
+      if (max > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['images'],
+          message: `match.inputImages.max is ${max} but images is empty`,
+        });
+      }
+      return;
+    }
+    // Slots are fixed to max; unused trailing slots use detach.
+    if (images.length !== max) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['images'],
+        message: `images.length (${images.length}) must equal inputImages.max (${max})`,
+      });
+    }
+    for (let i = 0; i < images.length; i++) {
+      const slot = images[i];
+      if (!slot) continue;
+      const optional = i >= min;
+      if (optional && (!slot.detach || slot.detach.length === 0)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['images', i, 'detach'],
+          message: `optional image slot ${i} (beyond min ${min}) must declare detach`,
+        });
+      }
+      if (!optional && slot.detach && slot.detach.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['images', i, 'detach'],
+          message: `required image slot ${i} must not declare detach`,
+        });
+      }
+    }
   });
 
 export type RecipeManifest = z.infer<typeof manifestSchema>;
 export type ParamTarget = z.infer<typeof targetSchema>;
 export type RecipeParam = z.infer<typeof paramSchema>;
 export type RecipeMatch = z.infer<typeof matchSchema>;
+export type RecipeImage = z.infer<typeof recipeImageSchema>;

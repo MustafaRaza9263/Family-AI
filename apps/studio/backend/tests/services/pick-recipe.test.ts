@@ -22,16 +22,25 @@ function recipeFrom(
   };
 }
 
+const createMatch = (
+  variant: { id: string; label: string; default?: boolean },
+): Recipe['manifest']['match'] => ({
+  tool: 'image',
+  inputImages: { min: 0, max: 0 },
+  label: 'Create',
+  placeholder: 'Describe the image you want',
+  variant,
+});
+
 describe('pickRecipe', () => {
   it('picks image-create-fast for text-to-image via default variant', () => {
     const recipes = new Map([
       [
         'image-create-fast',
-        recipeFrom('image-create-fast', {
-          tool: 'image',
-          inputImages: { min: 0, max: 0 },
-          variant: { id: 'fast', label: 'Fast', default: true },
-        }),
+        recipeFrom(
+          'image-create-fast',
+          createMatch({ id: 'fast', label: 'Fast', default: true }),
+        ),
       ],
     ]);
     expect(
@@ -43,19 +52,17 @@ describe('pickRecipe', () => {
     const recipes = new Map([
       [
         'image-create-fast',
-        recipeFrom('image-create-fast', {
-          tool: 'image',
-          inputImages: { min: 0, max: 0 },
-          variant: { id: 'fast', label: 'Fast', default: true },
-        }),
+        recipeFrom(
+          'image-create-fast',
+          createMatch({ id: 'fast', label: 'Fast', default: true }),
+        ),
       ],
       [
         'image-create-quality',
-        recipeFrom('image-create-quality', {
-          tool: 'image',
-          inputImages: { min: 0, max: 0 },
-          variant: { id: 'best', label: 'Best' },
-        }),
+        recipeFrom(
+          'image-create-quality',
+          createMatch({ id: 'best', label: 'Best' }),
+        ),
       ],
     ]);
     expect(

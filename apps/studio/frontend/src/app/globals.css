@@ -39,7 +39,7 @@
   --warning: #ff9f0a;
   --danger: #ff453a;
   --ring: #0a84ff;
-  --composer: #1c1c1e;
+  --composer: #141416;
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
@@ -71,6 +71,9 @@
 html,
 body {
   min-height: 100%;
+  /* Invisible absolute tips / filters must not make the page sideways-scrollable. */
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 body {
@@ -81,9 +84,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-:focus-visible {
+/* Keyboard focus ring for controls. Skip text fields — caret / border is enough
+   and a ring around a large textarea looks like a bug. */
+:focus-visible:not(textarea):not(input):not(select) {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Unlayered `:focus-visible` above beats Tailwind utilities. Opt out with
+   `outline-none` (important so it always wins the cascade). */
+.outline-none:focus,
+.outline-none:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -104,4 +117,129 @@ body {
 
 .scrollbar-none::-webkit-scrollbar {
   display: none;
+}
+
+/* Composer toolbar tips (hover + keyboard focus).
+   Hidden with `content: none` so nowrap bubbles do not widen the scrollport
+   (opacity:0 absolute tips still expand overflow-x:auto ancestors). */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]::after {
+  content: none;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 30;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+  white-space: nowrap;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--foreground);
+  padding: 6px 9px;
+  font: 500 12px/1.35 var(--font-sans);
+  box-shadow: var(--shadow-soft);
+}
+
+/* Keep tips near the right edge inside the viewport / composer. */
+[data-tip-align='end']:hover::after,
+[data-tip-align='end']:focus-visible::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* Empty new-chat hero (gradient headline + typewriter) */
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(8px);
+  }
+}
+
+/* Flow colours across the whole headline; each word offsets by --hero-off. */
+@keyframes hero-flow {
+  from {
+    background-position: calc(0px - var(--hero-off, 0px)) 0;
+  }
+  to {
+    background-position: calc(var(--hero-span) - var(--hero-off, 0px)) 0;
+  }
+}
+
+@keyframes hero-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.hero-rise {
+  animation: hero-rise 0.85s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.hero-headline {
+  --hero-span: 2400px;
+}
+
+.hero-word {
+  display: inline-block;
+  white-space: pre;
+  background: linear-gradient(
+    90deg,
+    #7dd3fc,
+    #a78bfa,
+    #f472b6,
+    #fbbf24,
+    #7dd3fc
+  );
+  background-size: var(--hero-span) 100%;
+  background-position: calc(0px - var(--hero-off, 0px)) 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 18px rgba(167, 139, 250, 0.25));
+  animation:
+    hero-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    hero-flow 12s linear infinite;
+}
+
+.hero-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--primary);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 45%, transparent);
+  animation: hero-blink 1s steps(1) infinite;
+}
+
+/* Composer focus / drag rings (token colours so light + dark both work) */
+.composer-shell {
+  transition:
+    border-color 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--primary) 6%, transparent),
+    0 10px 40px -10px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.composer-shell[data-dragging='true'] {
+  border-color: var(--primary);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent),
+    0 0 30px -4px color-mix(in srgb, var(--primary) 45%, transparent);
 }

@@ -12,6 +12,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { cn } from '@/lib/cn';
 
 /** Whitelist of lucide icons recipes may name. Unknown names get a fallback. */
 const REGISTRY: Record<string, LucideIcon> = {
@@ -33,7 +34,7 @@ export function resolveIcon(name: string | undefined): LucideIcon {
   return REGISTRY[name] ?? Circle;
 }
 
-/** Tiny aspect glyph from "W:H" (e.g. 16:9). */
+/** Tiny aspect glyph from "W:H" (e.g. 16:9) for the fan-out pill. */
 export function AspectGlyph({
   value,
   className,
@@ -45,21 +46,24 @@ export function AspectGlyph({
   const w = Number(wRaw);
   const h = Number(hRaw);
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-    return <Square className={className} aria-hidden />;
+    return <Square className={cn('size-4', className)} aria-hidden />;
   }
-  const max = 14;
+  const max = 12;
   const scale = max / Math.max(w, h);
+  const rw = Math.max(4, w * scale);
+  const rh = Math.max(4, h * scale);
+  const x = (20 - rw) / 2;
+  const y = (20 - rh) / 2;
   return (
-    <span
-      className={className}
+    <svg
+      viewBox="0 0 20 20"
+      className={cn('size-4 shrink-0', className)}
       aria-hidden
-      style={{
-        display: 'inline-block',
-        width: Math.max(6, w * scale),
-        height: Math.max(6, h * scale),
-        border: '1.5px solid currentColor',
-        borderRadius: 2,
-      }}
-    />
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <rect x={x} y={y} width={rw} height={rh} rx="2" />
+    </svg>
   );
 }

@@ -41,8 +41,8 @@ export function AppShell({
             <UserMenu user={user} avatarOnly />
           </header>
 
-          <main className="min-h-0 flex-1 overflow-y-auto scrollbar-none px-4 py-6 pb-[calc(5rem+var(--safe-bottom))] md:px-8 md:pb-8">
-            <div className="mx-auto flex min-h-full w-full max-w-screen-2xl flex-col">
+          <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-none px-4 py-6 pb-[calc(5rem+var(--safe-bottom))] md:px-8 md:pb-8">
+            <div className="mx-auto flex min-h-full w-full min-w-0 max-w-screen-2xl flex-col">
               {children}
             </div>
           </main>

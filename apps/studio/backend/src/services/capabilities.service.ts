@@ -103,6 +103,8 @@ function toPublicMode(recipe: Recipe): ToolMode {
 
   return {
     inputImages: { ...match.inputImages },
+    label: match.label,
+    placeholder: match.placeholder,
     variant: match.variant
       ? {
           id: match.variant.id,

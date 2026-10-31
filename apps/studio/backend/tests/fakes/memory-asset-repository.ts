@@ -55,6 +55,7 @@ export class MemoryAssetRepository implements AssetRepository {
       (a) => a.userId === opts.userId && !a.deletedAt,
     );
     if (opts.kind) rows = rows.filter((a) => a.kind === opts.kind);
+    if (opts.source) rows = rows.filter((a) => a.source === opts.source);
     rows.sort((a, b) => {
       const dt = b.createdAt.getTime() - a.createdAt.getTime();
       if (dt !== 0) return dt;

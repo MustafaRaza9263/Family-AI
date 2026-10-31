@@ -11,7 +11,7 @@ export type PickModeQuery = {
 
 /**
  * Pick the mode that covers this attachment count (and optional variant).
- * Used by the server (authoritative) and the client (to show controls).
+ * A variant that does not exist at this count is ignored — fall back to default.
  */
 export function pickMode<T extends ModeMatch>(
   modes: readonly T[],
@@ -25,11 +25,15 @@ export function pickMode<T extends ModeMatch>(
   if (matching.length === 0) return undefined;
 
   if (query.variantId !== undefined) {
-    return matching.find((m) => m.variant?.id === query.variantId);
+    const byVariant = matching.find((m) => m.variant?.id === query.variantId);
+    if (byVariant) return byVariant;
   }
 
   const preferred = matching.find((m) => m.variant?.default === true);
   if (preferred) return preferred;
+
+  // A lone candidate (e.g. Edit / Combine) is the default for that count.
+  if (matching.length === 1) return matching[0];
 
   const plain = matching.find((m) => m.variant === undefined);
   if (plain) return plain;

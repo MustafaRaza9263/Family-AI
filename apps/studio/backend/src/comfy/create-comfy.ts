@@ -32,6 +32,12 @@ export type ComfyRunResult = {
   };
 };
 
+export type ComfyRunInputImage = {
+  bytes: Buffer;
+  width: number;
+  height: number;
+};
+
 export type ComfyClient = {
   recipes: ReadonlyMap<string, Recipe>;
   run(
@@ -39,6 +45,7 @@ export type ComfyClient = {
     input: {
       jobId: string;
       values: PatchValues;
+      inputImages?: readonly ComfyRunInputImage[];
       hooks?: RunHooks;
       signal?: AbortSignal;
     },
@@ -104,9 +111,32 @@ export async function createComfy(
     },
     async run(recipeId, input): Promise<ComfyRunResult> {
       const recipe = requireRecipe(recipeId);
+      const inputImages = input.inputImages ?? [];
+      const patchedInputs: {
+        filename: string;
+        width: number;
+        height: number;
+      }[] = [];
+
+      for (let i = 0; i < inputImages.length; i++) {
+        const img = inputImages[i];
+        if (!img) continue;
+        const uploaded = await http.uploadImage({
+          bytes: img.bytes,
+          filename: `${input.jobId}_${i + 1}.png`,
+          subfolder: 'studio',
+        });
+        patchedInputs.push({
+          filename: uploaded.name,
+          width: img.width,
+          height: img.height,
+        });
+      }
+
       const { graph, resolved } = patchGraph(recipe, {
         jobId: input.jobId,
         values: input.values,
+        inputs: patchedInputs,
       });
       const collected = await runComfyPrompt({
         http,

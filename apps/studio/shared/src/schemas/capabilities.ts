@@ -32,6 +32,9 @@ export const toolModeSchema = z.object({
     min: z.number().int().nonnegative(),
     max: z.number().int().nonnegative(),
   }),
+  /** Mode name shown in the composer chip (Create / Edit / Combine). */
+  label: z.string().min(1),
+  placeholder: z.string().min(1),
   variant: modeVariantSchema.optional(),
   controls: z.array(modeControlSchema),
 });

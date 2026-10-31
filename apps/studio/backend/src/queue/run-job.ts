@@ -1,6 +1,8 @@
+import { readFile } from 'node:fs/promises';
 import type { ComfyClient } from '../comfy/index.js';
 import { EngineError, EngineErrorCodes } from '../comfy/errors.js';
 import type { EventHub } from '../events/hub.js';
+import { AppError, ErrorCodes } from '../lib/errors.js';
 import type { Clock } from '../lib/clock.js';
 import type { Logger } from '../lib/logger.js';
 import type { LimitsService } from '../limits/limits.service.js';
@@ -49,9 +51,11 @@ export async function runClaimedJob(
   safePublish(deps.hub, job.userId, { type: 'job.started', jobId: job.id });
 
   try {
+    const inputImages = await loadInputImages(job, deps);
     const result = await deps.comfy.run(job.recipeId, {
       jobId: job.id,
       values: toPatchValues(job.prompt, job.params),
+      inputImages,
       signal: ac.signal,
       hooks: {
         onSubmitted(promptId) {
@@ -148,6 +152,42 @@ export async function runClaimedJob(
   }
 }
 
+async function loadInputImages(
+  job: JobRecord,
+  deps: RunJobDeps,
+): Promise<{ bytes: Buffer; width: number; height: number }[]> {
+  if (job.inputAssetIds.length === 0) return [];
+  const assets = await deps.assets.findByIds(job.inputAssetIds);
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  const images: { bytes: Buffer; width: number; height: number }[] = [];
+  for (const id of job.inputAssetIds) {
+    const asset = byId.get(id);
+    if (!asset || !asset.filePath) {
+      throw new AppError(
+        400,
+        ErrorCodes.INVALID_INPUT,
+        'An input image file is missing',
+      );
+    }
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(asset.filePath);
+    } catch {
+      throw new AppError(
+        400,
+        ErrorCodes.INVALID_INPUT,
+        'An input image file is missing',
+      );
+    }
+    images.push({
+      bytes,
+      width: asset.width,
+      height: asset.height,
+    });
+  }
+  return images;
+}
+
 async function failJob(
   job: JobRecord,
   err: unknown,
@@ -156,11 +196,13 @@ async function failJob(
   aborted: boolean,
 ): Promise<void> {
   const code =
-    err instanceof EngineError
-      ? err.code
-      : aborted
-        ? 'ENGINE_CANCELLED'
-        : 'ENGINE_FAILED';
+    err instanceof AppError && err.code === ErrorCodes.INVALID_INPUT
+      ? ErrorCodes.INVALID_INPUT
+      : err instanceof EngineError
+        ? err.code
+        : aborted
+          ? 'ENGINE_CANCELLED'
+          : 'ENGINE_FAILED';
   const status = code === 'ENGINE_CANCELLED' ? 'cancelled' : 'failed';
   const finishedAt = deps.clock.now();
   await deps.jobs.finish(job.id, {

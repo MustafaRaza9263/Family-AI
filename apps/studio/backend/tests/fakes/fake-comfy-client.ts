@@ -29,6 +29,8 @@ export function createFakeComfyClient(
           match: {
             tool: 'image' as const,
             inputImages: { min: 0, max: 0 },
+            label: 'Create',
+            placeholder: 'Describe the image you want',
             variant: {
               id: 'fast',
               label: 'Fast',

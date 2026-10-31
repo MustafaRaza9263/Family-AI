@@ -11,6 +11,7 @@ const REFUNDABLE_ERRORS = new Set([
   'ENGINE_FAILED',
   'ENGINE_UNAVAILABLE',
   'ENGINE_BAD_OUTPUT',
+  'INVALID_INPUT',
 ]);
 
 export type RemainingForTool = {

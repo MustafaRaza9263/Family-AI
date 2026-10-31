@@ -11,6 +11,7 @@ import { GenerationService } from '../../src/services/generation.service.js';
 import { GenerationQueryService } from '../../src/services/generation-query.service.js';
 import { FilesService } from '../../src/services/files.service.js';
 import { LibraryService } from '../../src/services/library.service.js';
+import { UploadService } from '../../src/services/upload.service.js';
 import { AdminStudioService } from '../../src/services/admin-studio.service.js';
 import { MemoryUserRepository } from '../fakes/memory-user-repository.js';
 import { MemorySessionRepository } from '../fakes/memory-session-repository.js';
@@ -114,6 +115,7 @@ export async function buildStudioTestApp(
   const generation = new GenerationService({
     jobs,
     threads,
+    assets,
     limits,
     hub,
     clock: clock as Clock,
@@ -145,6 +147,11 @@ export async function buildStudioTestApp(
       dataDir: env.DATA_DIR,
     }),
     library: new LibraryService(assets),
+    uploads: new UploadService({
+      assets,
+      dataDir: env.DATA_DIR,
+      clock: clock as Clock,
+    }),
     adminStudio: new AdminStudioService({
       jobs,
       settings,

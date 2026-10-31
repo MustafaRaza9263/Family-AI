@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,6 +11,8 @@ import { useMe } from '@/features/auth/hooks';
 import * as createApi from '@/features/create/api';
 import { Composer, useCapabilities, useThreads } from '@/features/create';
 import { useCreateThread } from '@/features/create/hooks';
+import { ApiError } from '@/lib/api-client';
+import { errorMessage } from '@/lib/errors';
 import { firstName, greetingForNow } from '@/lib/format';
 
 export default function HomePage() {
@@ -53,6 +56,9 @@ export default function HomePage() {
                 inputAssetIds: payload.inputAssetIds,
               });
               router.push(`/create/?tool=image&thread=${created.thread.id}`);
+            } catch (err) {
+              const code = err instanceof ApiError ? err.code : undefined;
+              toast.error(errorMessage(code));
             } finally {
               setSubmitting(false);
             }

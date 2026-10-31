@@ -63,6 +63,14 @@ export function createFakeHttp(
       void promptId;
       order.push('clearPrompt');
     },
+    async uploadImage(input) {
+      order.push('uploadImage');
+      return {
+        name: `studio/${input.filename}`,
+        subfolder: input.subfolder,
+        type: 'input',
+      };
+    },
   };
   return fake;
 }

@@ -13,6 +13,12 @@ const submitResponseSchema = z.object({
   prompt_id: z.string().min(1),
 });
 
+const uploadResponseSchema = z.object({
+  name: z.string().min(1),
+  subfolder: z.string().optional().default(''),
+  type: z.string().optional().default('input'),
+});
+
 /** ComfyUI returns [number, promptId, ...] tuples in each queue list. */
 const queueResponseSchema = z.object({
   queue_running: z.array(z.array(z.unknown())).default([]),
@@ -160,6 +166,48 @@ export function createComfyHttp(opts: CreateComfyHttpOptions): ComfyHttp {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ delete: [promptId] }),
       });
+    },
+
+    async uploadImage(input): Promise<{
+      name: string;
+      subfolder: string;
+      type: string;
+    }> {
+      const form = new FormData();
+      // Uint8Array body keeps FormData compatible across Node Buffer versions.
+      const bytes = new Uint8Array(input.bytes);
+      form.append(
+        'image',
+        new Blob([bytes], { type: 'image/png' }),
+        input.filename,
+      );
+      form.append('type', 'input');
+      form.append('overwrite', 'true');
+      form.append('subfolder', input.subfolder);
+
+      const res = await request('/upload/image', {
+        method: 'POST',
+        body: form,
+      });
+      if (!res.ok) {
+        logger.error({ status: res.status }, 'comfy upload rejected');
+        throw new EngineError(
+          EngineErrorCodes.ENGINE_FAILED,
+          'Image engine rejected the upload',
+        );
+      }
+      const parsed = uploadResponseSchema.safeParse(await readJson(res));
+      if (!parsed.success) {
+        throw new EngineError(
+          EngineErrorCodes.ENGINE_FAILED,
+          'Image engine returned an invalid upload response',
+        );
+      }
+      const { name, subfolder, type } = parsed.data;
+      // LoadImage wants subfolder/name when a subfolder was used.
+      const stored =
+        subfolder && !name.includes('/') ? `${subfolder}/${name}` : name;
+      return { name: stored, subfolder, type };
     },
   };
 }

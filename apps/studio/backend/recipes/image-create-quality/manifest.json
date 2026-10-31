@@ -1,0 +1,97 @@
+{
+  "id": "image-create-quality",
+  "tool": "image",
+  "timeoutSeconds": 240,
+  "match": {
+    "tool": "image",
+    "inputImages": {
+      "min": 0,
+      "max": 0
+    },
+    "label": "Create",
+    "placeholder": "Describe the image you want",
+    "variant": {
+      "id": "best",
+      "label": "Best quality",
+      "icon": "sparkles"
+    }
+  },
+  "params": {
+    "prompt": {
+      "type": "text",
+      "label": "Prompt",
+      "group": "primary",
+      "maxLength": 1000,
+      "target": {
+        "title": "IN_PROMPT",
+        "fields": [
+          "value"
+        ]
+      }
+    },
+    "aspectRatio": {
+      "type": "enum",
+      "label": "Aspect ratio",
+      "icon": "ratio",
+      "group": "primary",
+      "default": "1:1",
+      "options": [
+        {
+          "value": "1:1",
+          "label": "Square",
+          "icon": "square",
+          "sizes": {
+            "width": 1024,
+            "height": 1024
+          }
+        },
+        {
+          "value": "4:5",
+          "label": "Portrait",
+          "icon": "rectangle-vertical",
+          "sizes": {
+            "width": 896,
+            "height": 1120
+          }
+        },
+        {
+          "value": "16:9",
+          "label": "Landscape",
+          "icon": "rectangle-horizontal",
+          "sizes": {
+            "width": 1344,
+            "height": 768
+          }
+        },
+        {
+          "value": "9:16",
+          "label": "Story",
+          "icon": "smartphone",
+          "sizes": {
+            "width": 768,
+            "height": 1344
+          }
+        }
+      ],
+      "target": {
+        "title": "IN_SIZE",
+        "fields": [
+          "width",
+          "height"
+        ]
+      }
+    }
+  },
+  "seed": {
+    "target": {
+      "title": "IN_SAMPLER",
+      "fields": [
+        "seed"
+      ]
+    }
+  },
+  "output": {
+    "title": "OUT_IMAGE",
+    "prefixField": "filename_prefix"
+  }
+}

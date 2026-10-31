@@ -24,6 +24,13 @@ export type ComfyQueueSnapshot = {
   pending: string[];
 };
 
+export type ComfyUploadResult = {
+  /** Name ComfyUI expects in LoadImage (may include subfolder). */
+  name: string;
+  subfolder: string;
+  type: string;
+};
+
 export type ComfyHttp = {
   /** `promptId` is chosen by the caller so the WebSocket can subscribe first. */
   submit(graph: ApiGraph, clientId: string, promptId: string): Promise<string>;
@@ -34,6 +41,11 @@ export type ComfyHttp = {
   /** Remove a prompt from ComfyUI's pending/running queues. */
   clearPrompt(promptId: string): Promise<void>;
   ping(): Promise<void>;
+  uploadImage(input: {
+    bytes: Buffer;
+    filename: string;
+    subfolder: string;
+  }): Promise<ComfyUploadResult>;
 };
 
 export type CachedNodeInfo = {

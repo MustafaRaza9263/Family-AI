@@ -12,6 +12,8 @@ export const ERROR_COPY: Record<string, string> = {
     'The studio engine is temporarily unavailable. Please try again shortly.',
   ENGINE_CANCELLED: 'This generation was cancelled.',
   INVALID_INPUT: 'Please check your prompt and settings, then try again.',
+  UPLOAD_TOO_LARGE: 'That image is too large. Use a file under 10 MB.',
+  UPLOAD_INVALID: 'That file is not a valid JPEG, PNG, or WebP image.',
   VALIDATION_ERROR: 'Please check your input and try again.',
   INVALID_CREDENTIALS: 'Incorrect email or password.',
   ACCOUNT_PENDING: 'Your account is waiting for admin approval.',

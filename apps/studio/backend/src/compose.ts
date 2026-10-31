@@ -30,6 +30,7 @@ import { ThreadService } from './services/thread.service.js';
 import { GenerationQueryService } from './services/generation-query.service.js';
 import { FilesService } from './services/files.service.js';
 import { LibraryService } from './services/library.service.js';
+import { UploadService } from './services/upload.service.js';
 import { AdminStudioService } from './services/admin-studio.service.js';
 import type { StudioApiServices } from './app.js';
 import {
@@ -61,6 +62,7 @@ export type StudioCompose = {
   limits: LimitsService;
   worker: QueueWorker;
   generation: GenerationService;
+  uploads: UploadService;
   api: StudioApiServices;
 };
 
@@ -137,6 +139,7 @@ export async function compose(
   const generation = new GenerationService({
     jobs,
     threads,
+    assets,
     limits,
     hub,
     clock,
@@ -172,6 +175,11 @@ export async function compose(
     dataDir: env.DATA_DIR,
   });
   const library = new LibraryService(assets);
+  const uploads = new UploadService({
+    assets,
+    dataDir: env.DATA_DIR,
+    clock,
+  });
   const adminStudio = new AdminStudioService({
     jobs,
     settings,
@@ -187,6 +195,7 @@ export async function compose(
     generations: generationQuery,
     files,
     library,
+    uploads,
     adminStudio,
   };
 
@@ -210,6 +219,7 @@ export async function compose(
     limits,
     worker,
     generation,
+    uploads,
     api,
   };
 }

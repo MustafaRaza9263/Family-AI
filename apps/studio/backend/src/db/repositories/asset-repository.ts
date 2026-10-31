@@ -39,6 +39,7 @@ export type CreateAssetInput = {
 export type ListLibraryOpts = {
   userId: string;
   kind?: AssetKind;
+  source?: AssetSource;
   limit: number;
   before?: { createdAt: Date; id: string };
 };

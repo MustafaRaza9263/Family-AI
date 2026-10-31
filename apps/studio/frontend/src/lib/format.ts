@@ -20,6 +20,21 @@ export function formatDate(iso: string): string {
   });
 }
 
+/** Local calendar day key for grouping thread items (YYYY-M-D). */
+export function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'invalid';
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Thread day label, e.g. "October 31 2026". */
+export function formatThreadDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const month = d.toLocaleDateString('en-US', { month: 'long' });
+  return `${month} ${d.getDate()} ${d.getFullYear()}`;
+}
+
 export function initials(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';

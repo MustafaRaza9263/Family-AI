@@ -44,4 +44,10 @@ describe('pickMode', () => {
   it('returns undefined when nothing matches', () => {
     expect(pickMode(modes, { inputImageCount: 5 })).toBeUndefined();
   });
+
+  it('ignores a variant that does not exist at this count', () => {
+    expect(
+      pickMode(modes, { inputImageCount: 1, variantId: 'best' })?.id,
+    ).toBe('edit');
+  });
 });

@@ -5,6 +5,12 @@ import type { Recipe } from './recipe.js';
 
 export type PatchValues = Record<string, string>;
 
+export type PatchInputImage = {
+  filename: string;
+  width: number;
+  height: number;
+};
+
 export type PatchResult = {
   graph: ApiGraph;
   resolved: { width?: number; height?: number; [key: string]: string | number | undefined };
@@ -63,13 +69,78 @@ function resolveParam(
   return param.target.fields.map(() => value);
 }
 
+function applyImages(
+  recipe: Recipe,
+  graph: ApiGraph,
+  inputs: readonly PatchInputImage[],
+  resolved: PatchResult['resolved'],
+): void {
+  const slots = recipe.manifest.images ?? [];
+  if (slots.length === 0) {
+    if (inputs.length > 0) {
+      throw new Error('Recipe does not accept input images');
+    }
+    return;
+  }
+
+  const { min, max } = recipe.manifest.match.inputImages;
+  if (inputs.length < min || inputs.length > max) {
+    throw new Error(
+      `Expected ${min}–${max} input images, got ${inputs.length}`,
+    );
+  }
+
+  for (let i = 0; i < inputs.length; i++) {
+    const slot = slots[i];
+    const input = inputs[i];
+    if (!slot || !input) continue;
+    const nodeId = recipe.titleToNodeId.get(slot.title);
+    if (!nodeId) {
+      throw new Error(`Internal: missing title ${slot.title}`);
+    }
+    writeFields(graph, nodeId, [slot.field], [input.filename]);
+    resolved[`image${i + 1}`] = input.filename;
+  }
+
+  // Drop unused trailing slots so example.png is never fed into the model.
+  for (let i = inputs.length; i < slots.length; i++) {
+    const slot = slots[i];
+    if (!slot?.detach) continue;
+    for (const d of slot.detach) {
+      const nodeId = recipe.titleToNodeId.get(d.title);
+      if (!nodeId) {
+        throw new Error(`Internal: missing title ${d.title}`);
+      }
+      const node = graph[nodeId];
+      if (!node) {
+        throw new Error(`Internal: missing node ${nodeId}`);
+      }
+      const nextInputs: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node.inputs)) {
+        if (key !== d.input) nextInputs[key] = value;
+      }
+      node.inputs = nextInputs;
+    }
+  }
+
+  const first = inputs[0];
+  if (first && resolved.width === undefined) {
+    resolved.width = first.width;
+    resolved.height = first.height;
+  }
+}
+
 /**
  * Clone the stored graph and write only manifest-allowed values.
  * Always assigns a fresh seed so ComfyUI cannot skip a regenerate via cache.
  */
 export function patchGraph(
   recipe: Recipe,
-  input: { jobId: string; values: PatchValues },
+  input: {
+    jobId: string;
+    values: PatchValues;
+    inputs?: readonly PatchInputImage[];
+  },
 ): PatchResult {
   const graph = structuredClone(recipe.graph);
   const resolved: PatchResult['resolved'] = {};
@@ -89,6 +160,8 @@ export function patchGraph(
     }
     writeFields(graph, nodeId, param.target.fields, values);
   }
+
+  applyImages(recipe, graph, input.inputs ?? [], resolved);
 
   const seedNodeId = titleToNodeId.get(manifest.seed.target.title);
   if (!seedNodeId) {

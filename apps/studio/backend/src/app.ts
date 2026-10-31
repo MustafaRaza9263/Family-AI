@@ -17,6 +17,7 @@ import type { ThreadService } from './services/thread.service.js';
 import type { GenerationQueryService } from './services/generation-query.service.js';
 import type { FilesService } from './services/files.service.js';
 import type { LibraryService } from './services/library.service.js';
+import type { UploadService } from './services/upload.service.js';
 import type { AdminStudioService } from './services/admin-studio.service.js';
 import { applySecurity } from './middleware/security.js';
 import { createOriginCheck } from './middleware/origin-check.js';
@@ -43,6 +44,7 @@ import { createGenerationsRoutes } from './routes/generations.routes.js';
 import { createEventsRoutes } from './routes/events.routes.js';
 import { createFilesRoutes } from './routes/files.routes.js';
 import { createLibraryRoutes } from './routes/library.routes.js';
+import { createUploadsRoutes } from './routes/uploads.routes.js';
 
 export type StudioApiServices = {
   hub: EventHub;
@@ -51,6 +53,7 @@ export type StudioApiServices = {
   generations: GenerationQueryService;
   files: FilesService;
   library: LibraryService;
+  uploads: UploadService;
   adminStudio: AdminStudioService;
 };
 
@@ -119,6 +122,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
     app.use('/api', createEventsRoutes(s.hub));
     app.use('/api', createFilesRoutes(s.files));
     app.use('/api', createLibraryRoutes(s.library));
+    app.use('/api', createUploadsRoutes(s.uploads, limits));
     app.use('/api', createAdminStudioRoutes(s.adminStudio));
   }
 
