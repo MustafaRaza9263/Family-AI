@@ -1,6 +1,9 @@
+export type ThreadTool = 'image' | 'video';
+
 export type ThreadRecord = {
   id: string;
   userId: string;
+  tool: ThreadTool;
   title: string;
   createdAt: Date;
   updatedAt: Date;
@@ -9,6 +12,7 @@ export type ThreadRecord = {
 
 export type CreateThreadInput = {
   userId: string;
+  tool: ThreadTool;
   title: string;
   createdAt: Date;
   updatedAt: Date;
@@ -16,6 +20,7 @@ export type CreateThreadInput = {
 
 export type ListThreadsOpts = {
   userId: string;
+  tool?: ThreadTool;
   limit: number;
   /** Exclusive: rows strictly older than this (updatedAt,id). */
   before?: { updatedAt: Date; id: string };

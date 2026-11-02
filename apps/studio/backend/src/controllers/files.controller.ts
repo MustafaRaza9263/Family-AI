@@ -18,6 +18,8 @@ export function createFilesController(service: FilesService) {
           user: req.auth.user,
           thumb: req.query.thumb === '1',
           download: req.query.download === '1',
+          rangeHeader:
+            typeof req.headers.range === 'string' ? req.headers.range : undefined,
           res,
         });
       } catch (err) {

@@ -15,7 +15,8 @@
     "comfy:smoke": "tsx --env-file=.env scripts/comfy-smoke.ts",
     "queue:smoke": "tsx --env-file=.env scripts/queue-smoke.ts",
     "api:smoke": "tsx --env-file=.env scripts/api-smoke.ts",
-    "flows:smoke": "tsx --env-file=.env scripts/flows-smoke.ts"
+    "flows:smoke": "tsx --env-file=.env scripts/flows-smoke.ts",
+    "video:smoke": "tsx --env-file=.env scripts/video-smoke.ts"
   },
   "dependencies": {
     "@studio/shared": "*",

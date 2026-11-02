@@ -5,10 +5,14 @@ import { queryKeys } from '@/lib/query-keys';
 import { applyStudioEvent } from './apply-event';
 import { jobLiveKey } from './job-live';
 
-function seedThread(client: QueryClient): void {
+function seedThread(
+  client: QueryClient,
+  tool: 'image' | 'video' = 'image',
+): void {
   const data: ThreadDetailResponse = {
     thread: {
       id: 't1',
+      tool,
       title: 'Hello',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
@@ -18,7 +22,7 @@ function seedThread(client: QueryClient): void {
         job: {
           id: 'j1',
           threadId: 't1',
-          tool: 'image',
+          tool,
           status: 'queued',
           prompt: 'cat',
           params: {},
@@ -81,6 +85,21 @@ describe('applyStudioEvent', () => {
     expect(thread?.items[0]?.job.status).toBe('done');
     expect(thread?.items[0]?.job.outputAssetIds).toEqual(['a1']);
     expect(thread?.items[0]?.assets[0]?.id).toBe('a1');
+    expect(thread?.items[0]?.assets[0]?.kind).toBe('image');
+  });
+
+  it('stubs video assets when the job tool is video', () => {
+    const client = new QueryClient();
+    seedThread(client, 'video');
+    applyStudioEvent(client, {
+      type: 'job.done',
+      jobId: 'j1',
+      assetIds: ['v1'],
+    });
+    const thread = client.getQueryData<ThreadDetailResponse>(
+      queryKeys.thread('t1'),
+    );
+    expect(thread?.items[0]?.assets[0]?.kind).toBe('video');
   });
 
   it('sets failed and cancelled', () => {

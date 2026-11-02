@@ -27,6 +27,10 @@ export const modeVariantSchema = z.object({
   default: z.boolean().optional(),
 });
 
+export const attachmentSlotSchema = z.object({
+  label: z.string().min(1),
+});
+
 export const toolModeSchema = z.object({
   inputImages: z.object({
     min: z.number().int().nonnegative(),
@@ -35,6 +39,8 @@ export const toolModeSchema = z.object({
   /** Mode name shown in the composer chip (Create / Edit / Combine). */
   label: z.string().min(1),
   placeholder: z.string().min(1),
+  /** Public labels for each image slot this mode accepts. */
+  slots: z.array(attachmentSlotSchema).optional(),
   variant: modeVariantSchema.optional(),
   controls: z.array(modeControlSchema),
 });
@@ -44,6 +50,8 @@ export const toolCapabilitySchema = z.object({
   label: z.string().min(1),
   attachments: z.object({
     max: z.number().int().nonnegative(),
+    /** Labels from the mode with the most image slots. */
+    slots: z.array(attachmentSlotSchema).optional(),
   }),
   modes: z.array(toolModeSchema),
 });

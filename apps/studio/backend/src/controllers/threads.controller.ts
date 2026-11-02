@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { createThreadRequestSchema, threadListQuerySchema } from '@studio/shared';
 import { AppError, ErrorCodes } from '../lib/errors.js';
 import type { ThreadService } from '../services/thread.service.js';
 
@@ -7,9 +8,15 @@ export function createThreadsController(service: ThreadService) {
     async create(req: Request, res: Response, next: NextFunction): Promise<void> {
       try {
         const userId = requireUserId(req);
-        const title =
-          typeof req.body?.title === 'string' ? req.body.title : undefined;
-        const body = await service.create(userId, title);
+        const parsed = createThreadRequestSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+          throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid thread input');
+        }
+        const body = await service.create(
+          userId,
+          parsed.data.tool,
+          parsed.data.title,
+        );
         res.status(201).json(body);
       } catch (err) {
         next(err);
@@ -19,10 +26,16 @@ export function createThreadsController(service: ThreadService) {
     async list(req: Request, res: Response, next: NextFunction): Promise<void> {
       try {
         const userId = requireUserId(req);
-        const cursor =
-          typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
-        const limit = Number(req.query.limit ?? 20);
-        const body = await service.list(userId, cursor, limit);
+        const parsed = threadListQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+          throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid query');
+        }
+        const body = await service.list(
+          userId,
+          parsed.data.cursor,
+          parsed.data.limit,
+          parsed.data.tool,
+        );
         res.status(200).json(body);
       } catch (err) {
         next(err);

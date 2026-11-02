@@ -57,6 +57,7 @@ export class MemoryAssetRepository implements AssetRepository {
     );
     if (opts.kind) rows = rows.filter((a) => a.kind === opts.kind);
     if (opts.source) rows = rows.filter((a) => a.source === opts.source);
+    else rows = rows.filter((a) => a.source !== 'derived');
     if (opts.assetIds) {
       const allow = new Set(opts.assetIds);
       rows = rows.filter((a) => allow.has(a.id));
@@ -87,6 +88,23 @@ export class MemoryAssetRepository implements AssetRepository {
       a.filePath = filePath;
       a.thumbPath = thumbPath;
     }
+  }
+
+  async updateMediaMeta(
+    id: string,
+    meta: {
+      width: number;
+      height: number;
+      bytes: number;
+      durationSec?: number;
+    },
+  ): Promise<void> {
+    const a = this.assets.get(id);
+    if (!a) return;
+    a.width = meta.width;
+    a.height = meta.height;
+    a.bytes = meta.bytes;
+    if (meta.durationSec !== undefined) a.durationSec = meta.durationSec;
   }
 
   async listOlderThan(cutoff: Date): Promise<AssetRecord[]> {

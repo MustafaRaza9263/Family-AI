@@ -60,7 +60,7 @@ describe('studio HTTP API', () => {
       password: 'password1234',
     });
     const agentA = await loginAgent(app, 'a@example.com', 'password1234');
-    const created = await agentA.post('/api/threads').send({});
+    const created = await agentA.post('/api/threads').send({ tool: 'image' });
     expect(created.status).toBe(201);
     const threadId = created.body.thread.id as string;
 
@@ -77,7 +77,7 @@ describe('studio HTTP API', () => {
       password: 'password1234',
     });
     const agent = await loginAgent(app, 'a@example.com', 'password1234');
-    const thread = await agent.post('/api/threads').send({});
+    const thread = await agent.post('/api/threads').send({ tool: 'image' });
     const threadId = thread.body.thread.id as string;
 
     const res = await agent.post(`/api/threads/${threadId}/generations`).send({
@@ -103,7 +103,7 @@ describe('studio HTTP API', () => {
       password: 'password1234',
     });
     const agent = await loginAgent(app, 'a@example.com', 'password1234');
-    const thread = await agent.post('/api/threads').send({});
+    const thread = await agent.post('/api/threads').send({ tool: 'image' });
     const gen = await agent
       .post(`/api/threads/${thread.body.thread.id}/generations`)
       .send({
@@ -281,7 +281,7 @@ describe('studio HTTP API', () => {
       password: 'password1234',
     });
     const agent = await loginAgent(app, 'a@example.com', 'password1234');
-    const thread = await agent.post('/api/threads').send({});
+    const thread = await agent.post('/api/threads').send({ tool: 'image' });
     const threadId = thread.body.thread.id as string;
 
     // Default: 1 running + 3 queued = 4 active.

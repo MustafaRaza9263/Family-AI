@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const assetKindSchema = z.enum(['image', 'video']);
 
+export const assetSourceSchema = z.enum(['upload', 'generated', 'derived']);
+
 export const assetSchema = z.object({
   id: z.string().min(1),
   kind: assetKindSchema,
@@ -10,7 +12,7 @@ export const assetSchema = z.object({
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   durationSec: z.number().nonnegative().optional(),
-  source: z.enum(['upload', 'generated']),
+  source: assetSourceSchema,
   threadId: z.string().optional(),
   jobId: z.string().optional(),
   parentAssetId: z.string().optional(),

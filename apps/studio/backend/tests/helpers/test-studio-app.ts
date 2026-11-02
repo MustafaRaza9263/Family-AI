@@ -10,9 +10,11 @@ import { ThreadService } from '../../src/services/thread.service.js';
 import { GenerationService } from '../../src/services/generation.service.js';
 import { GenerationQueryService } from '../../src/services/generation-query.service.js';
 import { FilesService } from '../../src/services/files.service.js';
+import { FrameService } from '../../src/services/frame.service.js';
 import { LibraryService } from '../../src/services/library.service.js';
 import { UploadService } from '../../src/services/upload.service.js';
 import { AdminStudioService } from '../../src/services/admin-studio.service.js';
+import type { MediaTools } from '../../src/media/types.js';
 import { MemoryUserRepository } from '../fakes/memory-user-repository.js';
 import { MemorySessionRepository } from '../fakes/memory-session-repository.js';
 import { MemoryThreadRepository } from '../fakes/memory-thread-repository.js';
@@ -147,6 +149,12 @@ export async function buildStudioTestApp(
       logger,
       dataDir: env.DATA_DIR,
     }),
+    frames: new FrameService({
+      assets,
+      media: fakeMediaTools(),
+      dataDir: env.DATA_DIR,
+      clock: clock as Clock,
+    }),
     library: new LibraryService(
       assets,
       new MemoryFavoriteRepository(),
@@ -232,4 +240,19 @@ function expectOkLogin(status: number): void {
   if (status !== 200) {
     throw new Error(`login failed with status ${status}`);
   }
+}
+
+function fakeMediaTools(): MediaTools {
+  return {
+    async probeVideo() {
+      return { width: 64, height: 64, frames: 12, durationSec: 0.5 };
+    },
+    async extractFrame() {
+      // Minimal valid 1x1 PNG.
+      return Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      );
+    },
+  };
 }

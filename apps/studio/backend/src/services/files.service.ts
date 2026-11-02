@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { access, unlink } from 'node:fs/promises';
+import { access, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Response } from 'express';
 import type { AuditRepository } from '../db/repositories/audit-repository.js';
@@ -25,6 +25,7 @@ export class FilesService {
     user: PublicUser;
     thumb: boolean;
     download: boolean;
+    rangeHeader?: string;
     res: Response;
   }): Promise<void> {
     const asset = await this.deps.assets.findById(opts.assetId);
@@ -61,11 +62,19 @@ export class FilesService {
     opts.res.setHeader('Content-Type', mime);
     opts.res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     if (opts.download) {
-      const name = path.basename(abs);
+      const name =
+        !opts.thumb && asset.kind === 'video'
+          ? `${asset.id}.mp4`
+          : path.basename(abs);
       opts.res.setHeader(
         'Content-Disposition',
         `attachment; filename="${name}"`,
       );
+    }
+
+    if (!opts.thumb && asset.kind === 'video') {
+      await sendWithRange(abs, opts.rangeHeader, opts.res);
+      return;
     }
     createReadStream(abs).pipe(opts.res);
   }
@@ -92,6 +101,49 @@ export class FilesService {
       }
     }
   }
+}
+
+async function sendWithRange(
+  abs: string,
+  rangeHeader: string | undefined,
+  res: Response,
+): Promise<void> {
+  const fileStat = await stat(abs);
+  const size = fileStat.size;
+  res.setHeader('Accept-Ranges', 'bytes');
+
+  if (!rangeHeader || !rangeHeader.startsWith('bytes=')) {
+    res.setHeader('Content-Length', size);
+    createReadStream(abs).pipe(res);
+    return;
+  }
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) {
+    res.status(416);
+    res.setHeader('Content-Range', `bytes */${size}`);
+    res.end();
+    return;
+  }
+  const start = match[1] ? Number(match[1]) : 0;
+  const end = match[2] ? Number(match[2]) : size - 1;
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start > end ||
+    start >= size
+  ) {
+    res.status(416);
+    res.setHeader('Content-Range', `bytes */${size}`);
+    res.end();
+    return;
+  }
+  const clampedEnd = Math.min(end, size - 1);
+  const chunk = clampedEnd - start + 1;
+  res.status(206);
+  res.setHeader('Content-Range', `bytes ${start}-${clampedEnd}/${size}`);
+  res.setHeader('Content-Length', chunk);
+  createReadStream(abs, { start, end: clampedEnd }).pipe(res);
 }
 
 /**

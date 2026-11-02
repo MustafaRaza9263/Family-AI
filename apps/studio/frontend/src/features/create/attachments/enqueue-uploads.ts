@@ -15,9 +15,12 @@ export function enqueueUploads(
     max: number;
     currentCount: number;
     dispatch: (action: AttachmentsAction) => void;
+    /** Fired once when the first file in this batch becomes a ready asset. */
+    onFirstAssetSize?: (size: { width: number; height: number }) => void;
   },
 ): void {
   let count = opts.currentCount;
+  let reportedSize = opts.currentCount > 0;
   for (const file of files) {
     if (!isAllowedImageFile(file)) {
       toast.error(errorMessage('UPLOAD_INVALID'));
@@ -44,6 +47,13 @@ export function enqueueUploads(
           assetId: asset.id,
           previewUrl: assetUrl(asset.id, { thumb: true }),
         });
+        if (!reportedSize && opts.onFirstAssetSize) {
+          reportedSize = true;
+          opts.onFirstAssetSize({
+            width: asset.width,
+            height: asset.height,
+          });
+        }
         URL.revokeObjectURL(previewUrl);
       })
       .catch((err: unknown) => {

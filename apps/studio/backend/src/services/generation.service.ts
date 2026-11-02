@@ -13,7 +13,7 @@ import { pickRecipe } from './pick-recipe.js';
 
 const createGenerationSchema = z.object({
   tool: z.enum(['image', 'video']),
-  prompt: z.string().min(1).max(1000),
+  prompt: z.string().min(1).max(2000),
   values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
   variant: z.string().optional(),
   inputAssetIds: z.array(z.string().min(1)).max(4).default([]),
@@ -56,6 +56,13 @@ export class GenerationService {
     if (!thread) {
       throw new AppError(404, ErrorCodes.NOT_FOUND, 'Thread not found');
     }
+    if (thread.tool !== input.tool) {
+      throw new AppError(
+        400,
+        ErrorCodes.INVALID_INPUT,
+        'Generation tool does not match this thread',
+      );
+    }
 
     await this.assertInputAssets(userId, input.inputAssetIds);
 
@@ -86,6 +93,14 @@ export class GenerationService {
     const parentAssetId =
       input.inputAssetIds.length === 1 ? input.inputAssetIds[0] : undefined;
 
+    // Drop controls that do not belong to this recipe (e.g. video
+    // quality/duration left over after switching tools in the UI).
+    const recipe = this.deps.recipes.get(picked.recipeId);
+    const params: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(input.values)) {
+      if (recipe && key in recipe.manifest.params) params[key] = value;
+    }
+
     let job: JobRecord;
     try {
       job = await this.deps.jobs.create({
@@ -95,7 +110,7 @@ export class GenerationService {
         recipeId: picked.recipeId,
         variant: input.variant,
         prompt: input.prompt,
-        params: input.values,
+        params,
         inputAssetIds: input.inputAssetIds,
         parentAssetId,
         queuedAt: now,

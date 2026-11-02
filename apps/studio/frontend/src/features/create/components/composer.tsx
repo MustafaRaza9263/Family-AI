@@ -1,7 +1,8 @@
 'use client';
 
 import type { ToolCapability } from '@studio/shared';
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/cn';
 import { AttachmentTray } from '../attachments/attachment-tray';
@@ -15,6 +16,7 @@ import {
 import type { AttachmentItem } from '../attachments/types';
 import {
   defaultValues,
+  getBarControls,
   getPromptControl,
   listVariants,
   loadPrefs,
@@ -22,6 +24,8 @@ import {
   savePrefs,
   type ControlValue,
 } from '../control-state';
+import { nearestAspect } from '../nearest-aspect';
+import { toolUi } from '../tool-ui';
 import { ControlBar } from './control-bar';
 import { PromptField } from './prompt-field';
 
@@ -61,6 +65,7 @@ export function Composer({
   /** Fired when Clear empties the tray. */
   onAttachmentsClear?: () => void;
 }) {
+  const ui = toolUi(tool.id);
   const prefs = useMemo(() => loadPrefs(tool.id), [tool.id]);
   const [attachState, dispatch] = useReducer(
     attachmentsReducer,
@@ -71,6 +76,12 @@ export function Composer({
   const variants = listVariants(tool, inputImageCount);
   const showVariant = variants.length > 1;
   const [dragging, setDragging] = useState(false);
+  // Video: Start/End slots stay hidden until the frames icon is opened (or seeded).
+  const [framesOpen, setFramesOpen] = useState(
+    () => ui.attachmentStyle === 'slots' && initialAttachments.length > 0,
+  );
+  const aspectTouched = useRef(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [prompt, setPrompt] = useState(initialPrompt);
   const [variantId, setVariantId] = useState<string | undefined>(
@@ -85,7 +96,6 @@ export function Composer({
     savePrefs(tool.id, { variantId, values });
   }, [tool.id, variantId, values]);
 
-  // External file drags often skip dragleave; clear highlight on drag end.
   useEffect(() => {
     if (!dragging) return;
     const clear = () => setDragging(false);
@@ -98,9 +108,13 @@ export function Composer({
   }, [dragging]);
 
   const promptControl = getPromptControl(mode);
-  const promptMax = promptControl?.maxLength ?? 1000;
+  const promptMax = promptControl?.maxLength ?? 2000;
   const maxAttach = tool.attachments.max;
   const uploading = hasUploading(attachState);
+  const slotLabels =
+    mode?.slots?.map((s) => s.label) ??
+    tool.attachments.slots?.map((s) => s.label) ??
+    [];
   const blockReason =
     quota.remaining <= 0
       ? 'Daily quota used up'
@@ -112,17 +126,54 @@ export function Composer({
             ? 'Waiting for uploads'
             : undefined;
 
+  const maybePreselectAspect = (size: { width: number; height: number }) => {
+    if (aspectTouched.current) return;
+    const aspectControl = getBarControls(mode).find(
+      (c) =>
+        c.type === 'enum' &&
+        c.options?.every((opt) => /^\d+:\d+$/.test(opt.value)),
+    );
+    if (!aspectControl?.options?.length) return;
+    const next = nearestAspect(
+      size.width,
+      size.height,
+      aspectControl.options.map((o) => o.value),
+    );
+    setValues((prev) => ({ ...prev, [aspectControl.id]: next }));
+  };
+
+  // Video: nearest aspect on first attach (or seeded Start frame), unless user changed it.
+  useEffect(() => {
+    if (ui.attachmentStyle !== 'slots') return;
+    const first = initialAttachments[0];
+    if (!first?.previewUrl || aspectTouched.current) return;
+    const img = new Image();
+    img.onload = () => {
+      if (aspectTouched.current) return;
+      maybePreselectAspect({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      });
+    };
+    img.src = first.previewUrl;
+    // Only seed once from the mount-time attachments.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount seed
+  }, []);
+
   const addFiles = (files: File[]) =>
     enqueueUploads(files, {
       max: maxAttach,
       currentCount: attachState.items.length,
       dispatch,
+      onFirstAssetSize:
+        ui.attachmentStyle === 'slots' ? maybePreselectAspect : undefined,
     });
 
   const clearAttachments = () => {
     if (attachState.items.some((i) => i.working)) onWorkingDismiss?.();
     dispatch({ type: 'clear' });
     onAttachmentsClear?.();
+    if (ui.attachmentStyle === 'slots') setFramesOpen(false);
   };
 
   const submit = () => {
@@ -141,11 +192,22 @@ export function Composer({
   };
 
   const modeHint =
-    inputImageCount > 1
-      ? `${inputImageCount} of ${maxAttach} attached · in your prompt, refer to them as image 1, image 2, and so on`
-      : inputImageCount === 1
-        ? 'Describe what to change'
-        : undefined;
+    ui.attachmentStyle === 'slots'
+      ? inputImageCount === 0
+        ? undefined
+        : inputImageCount === 1
+          ? 'Describe how the start frame comes alive'
+          : 'Describe how the first frame becomes the last'
+      : inputImageCount > 1
+        ? `${inputImageCount} of ${maxAttach} attached · in your prompt, refer to them as image 1, image 2, and so on`
+        : inputImageCount === 1
+          ? 'Describe what to change'
+          : undefined;
+
+  const slotsStyle = ui.attachmentStyle === 'slots';
+  const showTray = slotsStyle
+    ? framesOpen || attachState.items.length > 0
+    : attachState.items.length > 0;
 
   return (
     <form
@@ -171,17 +233,44 @@ export function Composer({
         submit();
       }}
     >
-      <AttachmentTray
-        items={attachState.items}
-        modeLabel={mode?.label}
-        modeHint={modeHint}
-        onRemove={(key) => {
-          const item = attachState.items.find((i) => i.key === key);
-          dispatch({ type: 'remove', key });
-          if (item?.working) onWorkingDismiss?.();
-          onAttachmentRemove?.(key);
+      <AnimatePresence initial={false}>
+        {showTray ? (
+          <motion.div
+            key="attach-tray"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <AttachmentTray
+              items={attachState.items}
+              modeLabel={mode?.label}
+              modeHint={modeHint}
+              attachmentStyle={ui.attachmentStyle}
+              slotLabels={slotLabels}
+              attachDisabled={inputImageCount >= maxAttach || disabled}
+              onRemove={(key) => {
+                const item = attachState.items.find((i) => i.key === key);
+                dispatch({ type: 'remove', key });
+                if (item?.working) onWorkingDismiss?.();
+                onAttachmentRemove?.(key);
+              }}
+              onClear={clearAttachments}
+              onAddSlot={() => fileRef.current?.click()}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) addFiles(Array.from(e.target.files));
+          e.target.value = '';
         }}
-        onClear={clearAttachments}
       />
       <PromptField
         value={prompt}
@@ -201,12 +290,25 @@ export function Composer({
         promptMax={promptMax}
         quotaRemaining={quota.remaining}
         quotaDaily={quota.dailyRuns}
-        canAttach={maxAttach > 0}
+        quotaNoun={ui.quotaNoun}
+        canAttach={maxAttach > 0 && !slotsStyle}
         attachDisabled={inputImageCount >= maxAttach || disabled}
+        framesMode={slotsStyle && maxAttach > 0}
+        framesOpen={showTray}
+        onFramesToggle={() => {
+          if (attachState.items.length > 0) {
+            setFramesOpen(true);
+            return;
+          }
+          setFramesOpen((open) => !open);
+        }}
         sendDisabled={Boolean(disabled || blockReason)}
         sending={submitting}
         onVariantChange={setVariantId}
-        onValueChange={(id, v) => setValues((prev) => ({ ...prev, [id]: v }))}
+        onValueChange={(id, v) => {
+          if (id === 'aspectRatio') aspectTouched.current = true;
+          setValues((prev) => ({ ...prev, [id]: v }));
+        }}
         onPickFiles={(list) => {
           if (list) addFiles(Array.from(list));
         }}

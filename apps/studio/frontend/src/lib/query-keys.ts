@@ -1,7 +1,8 @@
 export const queryKeys = {
   me: ['me'] as const,
   capabilities: ['capabilities'] as const,
-  threads: (cursor?: string) => ['threads', cursor ?? ''] as const,
+  threads: (cursor?: string, tool?: string) =>
+    ['threads', tool ?? 'all', cursor ?? ''] as const,
   thread: (id: string) => ['thread', id] as const,
   library: (kind: string | undefined, cursor?: string) =>
     ['library', kind ?? 'all', cursor ?? ''] as const,

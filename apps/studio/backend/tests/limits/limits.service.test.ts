@@ -37,6 +37,13 @@ function makeService(overrides?: {
 }
 
 describe('LimitsService', () => {
+  it('defaults video dailyRuns to 25', async () => {
+    const { limits } = makeService();
+    const resolved = await limits.resolvedLimits();
+    expect(resolved.dailyRuns.video).toBe(25);
+    expect(resolved.dailyRuns.image).toBe(100);
+  });
+
   it('reserveRun stops at the daily limit', async () => {
     const { limits, usage } = makeService({ dailyImage: 2 });
     await limits.reserveRun('u1', 'image');

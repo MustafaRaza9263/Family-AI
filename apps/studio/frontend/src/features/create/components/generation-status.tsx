@@ -34,7 +34,8 @@ export function formatTook(
   if (!startedAt || !finishedAt) return null;
   const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
   if (!Number.isFinite(ms) || ms < 0) return null;
-  return `${(ms / 1000).toFixed(1)}s`;
+  // Same m:ss clock as the live timer (e.g. 4:40, not 280.0s).
+  return formatElapsed(ms);
 }
 
 export function useLiveTimer(
@@ -57,6 +58,7 @@ export function statusPlain(
   state: CardState,
   position: number | undefined,
   pct: number,
+  regenerating = false,
 ): string {
   switch (state) {
     case 'queued': {
@@ -70,9 +72,11 @@ export function statusPlain(
     case 'finishing':
       return 'Finishing';
     case 'failed':
-      return 'Couldn’t generate · not counted';
+      return regenerating
+        ? 'Couldn’t regenerate · not counted'
+        : 'Couldn’t generate · not counted';
     case 'cancelled':
-      return 'Cancelled';
+      return regenerating ? 'Cancelled · not counted' : 'Cancelled';
     default:
       return '';
   }
@@ -82,10 +86,12 @@ export function StatusLabel({
   state,
   position,
   pct,
+  regenerating = false,
 }: {
   state: CardState;
   position: number | undefined;
   pct: number;
+  regenerating?: boolean;
 }) {
   const bold = (text: string) => (
     <span className="font-medium text-foreground">{text}</span>
@@ -112,13 +118,23 @@ export function StatusLabel({
     case 'finishing':
       return bold('Finishing');
     case 'failed':
-      return (
+      return regenerating ? (
+        <>
+          {bold('Couldn’t regenerate')} · not counted
+        </>
+      ) : (
         <>
           {bold('Couldn’t generate')} · not counted
         </>
       );
     case 'cancelled':
-      return bold('Cancelled');
+      return regenerating ? (
+        <>
+          {bold('Cancelled')} · not counted
+        </>
+      ) : (
+        bold('Cancelled')
+      );
     default:
       return null;
   }

@@ -43,13 +43,30 @@ function patchLive(
   }));
 }
 
+function jobTool(
+  client: QueryClient,
+  jobId: string,
+): 'image' | 'video' | undefined {
+  const entries = client.getQueriesData<ThreadDetailResponse>({
+    queryKey: ['thread'],
+  });
+  for (const [, data] of entries) {
+    const item = data?.items.find((i) => i.job.id === jobId);
+    if (item) return item.job.tool;
+  }
+  return undefined;
+}
+
 /** Placeholder assets so the card can render immediately from job.done. */
-function stubAssets(assetIds: string[]): AssetDto[] {
+function stubAssets(
+  assetIds: string[],
+  kind: AssetDto['kind'],
+): AssetDto[] {
   const now = new Date().toISOString();
   return assetIds.map((id) => ({
     id,
-    kind: 'image',
-    mime: 'image/png',
+    kind,
+    mime: kind === 'video' ? 'video/mp4' : 'image/png',
     bytes: 0,
     width: 1,
     height: 1,
@@ -83,16 +100,19 @@ export function applyStudioEvent(
         progressMax: event.max,
       });
       break;
-    case 'job.done':
+    case 'job.done': {
+      const tool = jobTool(client, event.jobId);
+      const kind = tool === 'video' ? 'video' : 'image';
       patchThreadItem(client, event.jobId, {
         job: { status: 'done', outputAssetIds: event.assetIds },
-        assets: stubAssets(event.assetIds),
+        assets: stubAssets(event.assetIds, kind),
       });
       void client.invalidateQueries({ queryKey: ['thread'] });
       void client.invalidateQueries({ queryKey: ['library'] });
       void client.invalidateQueries({ queryKey: ['threads'] });
       void client.invalidateQueries({ queryKey: queryKeys.capabilities });
       break;
+    }
     case 'job.failed':
       patchThreadItem(client, event.jobId, {
         job: { status: 'failed', errorCode: event.errorCode },
@@ -112,3 +132,11 @@ export function applyStudioEvent(
       break;
   }
 }
+
+export function readyNotificationBody(
+  tool: 'image' | 'video' | undefined,
+): string {
+  return tool === 'video' ? 'Your video is ready' : 'Your generation is ready';
+}
+
+export { jobTool };

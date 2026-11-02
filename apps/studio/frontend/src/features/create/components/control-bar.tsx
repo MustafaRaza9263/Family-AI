@@ -1,10 +1,8 @@
 'use client';
 
 import type { ToolCapability } from '@studio/shared';
-import { Plus, Settings2 } from 'lucide-react';
+import { Images, Plus } from 'lucide-react';
 import { useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/cn';
 import {
   getBarControls,
@@ -13,11 +11,14 @@ import {
   type ControlValue,
 } from '../control-state';
 import { AspectPill } from './aspect-pill';
-import { ControlOption } from './control-option';
+import { EnumPill } from './enum-pill';
 import { SubmitButton } from './submit-button';
 import { VariantControl } from './variant-control';
 
-function looksLikeAspect(control: { type: string; options?: { value: string }[] }) {
+function looksLikeAspect(control: {
+  type: string;
+  options?: { value: string }[];
+}) {
   return (
     control.type === 'enum' &&
     Boolean(control.options?.length) &&
@@ -34,8 +35,12 @@ export function ControlBar({
   promptMax,
   quotaRemaining,
   quotaDaily,
+  quotaNoun = 'images',
   canAttach,
   attachDisabled,
+  framesMode,
+  framesOpen,
+  onFramesToggle,
   sendDisabled,
   sending,
   onVariantChange,
@@ -50,8 +55,13 @@ export function ControlBar({
   promptMax: number;
   quotaRemaining: number;
   quotaDaily: number;
+  quotaNoun?: string;
   canAttach: boolean;
   attachDisabled?: boolean;
+  /** Video: frames icon toggles Start/End slots instead of a plain +. */
+  framesMode?: boolean;
+  framesOpen?: boolean;
+  onFramesToggle?: () => void;
   sendDisabled?: boolean;
   sending?: boolean;
   onVariantChange: (id: string) => void;
@@ -63,18 +73,34 @@ export function ControlBar({
   const mode = resolveMode(tool, inputImageCount, variantId);
   const controls = getBarControls(mode);
   const aspect = controls.find(looksLikeAspect);
-  const settings = controls.filter((c) => c !== aspect);
+  // Quality / duration stay in the bar — no settings popup.
+  const inlineEnums = controls.filter((c) => c !== aspect && c.type === 'enum');
   const warnChars = promptLength > promptMax * 0.8;
   const meta = warnChars
     ? `${promptLength}/${promptMax}`
-    : `${quotaRemaining} left`;
+    : `${quotaRemaining} of ${quotaDaily} ${quotaNoun} left today`;
   const hasImages = inputImageCount > 0;
-  // Quality only applies to create (0 images).
   const showQuality = variants.length > 1 && !hasImages;
 
   return (
     <div className="flex min-w-0 max-w-full items-center gap-1.5">
-      {canAttach ? (
+      {framesMode ? (
+        <button
+          type="button"
+          className={cn(
+            'grid size-[34px] place-items-center rounded-full border border-border transition duration-200',
+            framesOpen
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-surface-muted hover:text-foreground',
+          )}
+          aria-label="Frames"
+          aria-pressed={framesOpen}
+          data-tip="Start and end frames"
+          onClick={onFramesToggle}
+        >
+          <Images className="size-[18px]" strokeWidth={2} />
+        </button>
+      ) : canAttach ? (
         <>
           <button
             type="button"
@@ -120,28 +146,14 @@ export function ControlBar({
         />
       ) : null}
 
-      {settings.length > 0 ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="size-[34px] rounded-full p-0">
-              <Settings2 className="size-4" />
-              <span className="sr-only">Settings</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="space-y-3">
-            {settings.map((c) => (
-              <div key={c.id} className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">{c.label}</p>
-                <ControlOption
-                  control={c}
-                  value={values[c.id] ?? c.default}
-                  onChange={(v) => onValueChange(c.id, v)}
-                />
-              </div>
-            ))}
-          </PopoverContent>
-        </Popover>
-      ) : null}
+      {inlineEnums.map((c) => (
+        <EnumPill
+          key={c.id}
+          control={c}
+          value={values[c.id] ?? c.default}
+          onChange={(v) => onValueChange(c.id, v)}
+        />
+      ))}
 
       <div className="flex-1" />
 
@@ -150,7 +162,7 @@ export function ControlBar({
           'hidden px-1.5 text-xs text-muted-foreground tabular-nums sm:inline',
           warnChars && 'text-warning',
         )}
-        data-tip={`${quotaRemaining} of ${quotaDaily} images left today`}
+        data-tip={`${quotaRemaining} of ${quotaDaily} ${quotaNoun} left today`}
         data-tip-align="end"
       >
         {meta}

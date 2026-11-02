@@ -6,7 +6,7 @@ import { extractImageFiles } from '../attachments/extract-image-files';
 
 export function PromptField({
   value,
-  maxLength = 1000,
+  maxLength = 2000,
   placeholder,
   onChange,
   disabled,
@@ -28,7 +28,8 @@ export function PromptField({
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 24), 180)}px`;
+    // Keep a taller resting height so image and video prompts feel roomy.
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 88), 220)}px`;
   }, [value]);
 
   return (
@@ -37,14 +38,14 @@ export function PromptField({
       value={value}
       maxLength={maxLength}
       disabled={disabled}
-      rows={1}
+      rows={3}
       aria-label="Prompt"
       placeholder={placeholder ?? 'Describe the image you want'}
       className={cn(
         'scrollbar-none block w-full resize-none overflow-y-auto border-0 bg-transparent shadow-none ring-0',
-        'px-2 py-1.5 pb-2 text-[15px] leading-snug text-foreground',
+        'px-2 py-2 pb-2.5 text-[15px] leading-snug text-foreground',
         'outline-none',
-        'min-h-6 max-h-[180px] placeholder:text-muted-foreground',
+        'min-h-[88px] max-h-[220px] placeholder:text-muted-foreground',
       )}
       onChange={(e) => onChange(e.target.value)}
       onPaste={(e) => {

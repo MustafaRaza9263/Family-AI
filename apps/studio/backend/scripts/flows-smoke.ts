@@ -52,6 +52,7 @@ async function main(): Promise<void> {
   });
   const thread = await threads.create({
     userId: user.id,
+    tool: 'image',
     title: 'flows smoke',
     createdAt: clock.now(),
     updatedAt: clock.now(),

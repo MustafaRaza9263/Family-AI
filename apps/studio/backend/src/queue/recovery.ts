@@ -4,18 +4,20 @@ import type { EventHub } from '../events/hub.js';
 import type { Clock } from '../lib/clock.js';
 import type { Logger } from '../lib/logger.js';
 import type { LimitsService } from '../limits/limits.service.js';
+import type { MediaTools } from '../media/types.js';
 import type { AssetRepository } from '../db/repositories/asset-repository.js';
 import type {
   JobRecord,
   JobRepository,
 } from '../db/repositories/job-repository.js';
-import { writeGeneratedImage } from './write-output.js';
+import { writeImageOutput, writeVideoOutput } from './write-output.js';
 
 export type RecoveryDeps = {
   comfy: ComfyClient;
   jobs: JobRepository;
   assets: AssetRepository;
   limits: LimitsService;
+  media: MediaTools;
   hub: EventHub;
   clock: Clock;
   logger: Logger;
@@ -57,17 +59,28 @@ async function recoverOne(
   if (promptId) {
     try {
       const collected = await deps.comfy.collect(job.recipeId, promptId);
-      const image = collected.outputs[0];
-      if (image) {
-        const written = await writeGeneratedImage({
-          dataDir: deps.dataDir,
-          job,
-          bytes: image,
-          width: 0,
-          height: 0,
-          assets: deps.assets,
-          createdAt: deps.clock.now(),
-        });
+      const bytes = collected.outputs[0];
+      if (bytes) {
+        const createdAt = deps.clock.now();
+        const written =
+          job.tool === 'video'
+            ? await writeVideoOutput({
+                dataDir: deps.dataDir,
+                job,
+                bytes,
+                assets: deps.assets,
+                media: deps.media,
+                createdAt,
+              })
+            : await writeImageOutput({
+                dataDir: deps.dataDir,
+                job,
+                bytes,
+                width: 0,
+                height: 0,
+                assets: deps.assets,
+                createdAt,
+              });
         await deps.jobs.finish(job.id, {
           status: 'done',
           finishedAt: deps.clock.now(),

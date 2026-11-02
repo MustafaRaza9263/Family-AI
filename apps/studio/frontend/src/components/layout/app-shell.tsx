@@ -1,7 +1,7 @@
 'use client';
 
 import type { PublicUser } from '@studio/shared';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { useCapabilities, useThreads } from '@/features/create';
 import { useStudioEvents } from '@/features/events';
 import { BrandMark } from './brand-mark';
@@ -29,7 +29,9 @@ export function AppShell({
 
       <div className="flex min-h-0 flex-1">
         <div className="hidden md:flex">
-          <Sidebar user={user} threads={threads.data?.items ?? []} />
+          <Suspense fallback={<aside className="w-60 shrink-0 border-r border-border" />}>
+            <Sidebar user={user} threads={threads.data?.items ?? []} />
+          </Suspense>
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">

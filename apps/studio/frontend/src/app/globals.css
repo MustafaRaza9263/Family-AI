@@ -157,6 +157,13 @@ body {
   transform: none;
 }
 
+/* Version chip sits under overflow:hidden — open downward so the tip is not clipped. */
+[data-tip-side='below']:hover::after,
+[data-tip-side='below']:focus-visible::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
 /* Empty new-chat hero (gradient headline + typewriter) */
 @keyframes hero-rise {
   from {

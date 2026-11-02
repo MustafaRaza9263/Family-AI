@@ -19,10 +19,10 @@ export function useCapabilities() {
   });
 }
 
-export function useThreads() {
+export function useThreads(tool?: 'image' | 'video') {
   return useQuery({
-    queryKey: queryKeys.threads(),
-    queryFn: api.listThreads,
+    queryKey: queryKeys.threads(undefined, tool),
+    queryFn: () => api.listThreads(tool ? { tool } : undefined),
   });
 }
 
@@ -38,7 +38,8 @@ export function useThread(id: string | undefined) {
 export function useCreateThread() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (title?: string) => api.createThread(title),
+    mutationFn: (input: { tool: 'image' | 'video'; title?: string }) =>
+      api.createThread(input),
     onSuccess: (data) => {
       client.setQueryData<ThreadDetailResponse>(
         queryKeys.thread(data.thread.id),
@@ -58,14 +59,17 @@ export function useCreateGeneration() {
     }: {
       threadId: string;
       input: CreateGenerationRequest;
+      /** Called sync inside onSuccess so callers can fold the job before paint. */
+      onCreated?: (data: { job: ThreadDetailResponse['items'][number]['job'] }) => void;
     }) => api.createGeneration(threadId, input),
-    onSuccess: (data, { threadId }) => {
+    onSuccess: (data, { threadId, onCreated }) => {
       client.setQueryData<ThreadDetailResponse>(
         queryKeys.thread(threadId),
         (prev) => {
           const base = prev ?? {
             thread: {
               id: threadId,
+              tool: data.job.tool,
               title: '',
               createdAt: data.job.timings.queuedAt,
               updatedAt: data.job.timings.queuedAt,
@@ -78,6 +82,7 @@ export function useCreateGeneration() {
           };
         },
       );
+      onCreated?.(data);
       void client.invalidateQueries({ queryKey: queryKeys.capabilities });
       void client.invalidateQueries({ queryKey: ['threads'] });
     },
@@ -96,6 +101,22 @@ export function useDeleteAsset() {
     mutationFn: (assetId: string) => api.deleteAsset(assetId),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['thread'] });
+      void client.invalidateQueries({ queryKey: ['library'] });
+    },
+  });
+}
+
+export function useExtractFrame() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      assetId,
+      at,
+    }: {
+      assetId: string;
+      at: 'first' | 'last';
+    }) => api.extractFrame(assetId, at),
+    onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['library'] });
     },
   });

@@ -16,16 +16,22 @@ export function fetchCapabilities() {
   return apiFetch('/api/capabilities', capabilitiesResponseSchema);
 }
 
-export function listThreads() {
-  return apiFetch('/api/threads', threadListResponseSchema);
+export function listThreads(opts?: { tool?: 'image' | 'video' }) {
+  const params = new URLSearchParams();
+  if (opts?.tool) params.set('tool', opts.tool);
+  const qs = params.toString();
+  return apiFetch(
+    `/api/threads${qs ? `?${qs}` : ''}`,
+    threadListResponseSchema,
+  );
 }
 
 export function getThread(id: string) {
   return apiFetch(`/api/threads/${id}`, threadDetailResponseSchema);
 }
 
-export function createThread(title?: string) {
-  const body = createThreadRequestSchema.parse(title ? { title } : {});
+export function createThread(input: { tool: 'image' | 'video'; title?: string }) {
+  const body = createThreadRequestSchema.parse(input);
   return apiFetch('/api/threads', createThreadResponseSchema, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -51,6 +57,7 @@ export function deleteAsset(assetId: string) {
 }
 
 const uploadResponseSchema = z.object({ asset: assetSchema });
+const frameResponseSchema = z.object({ asset: assetSchema });
 
 export async function uploadImage(file: File) {
   const body = new FormData();
@@ -75,6 +82,13 @@ export async function uploadImage(file: File) {
     throw Object.assign(new Error(code), { code });
   }
   return uploadResponseSchema.parse(json).asset;
+}
+
+export function extractFrame(assetId: string, at: 'first' | 'last') {
+  return apiFetch(`/api/assets/${assetId}/frame`, frameResponseSchema, {
+    method: 'POST',
+    body: JSON.stringify({ at }),
+  });
 }
 
 export function listLibraryForAttach(opts: {

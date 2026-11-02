@@ -3,11 +3,17 @@ import path from 'node:path';
 import { graphSchema, type ApiGraph } from './graph-schema.js';
 import {
   manifestSchema,
+  type ManifestWrite,
   type ParamTarget,
   type RecipeManifest,
 } from './manifest-schema.js';
 import { assertRecipeMatchRules } from './match-validation.js';
+import { normalizeManifestSizes } from './normalize-manifest.js';
 import type { Recipe } from './recipe.js';
+import {
+  assertDerivedRules,
+  assertWriteTarget,
+} from './validate-derived.js';
 
 function buildTitleIndex(graph: ApiGraph): Map<string, string[]> {
   const index = new Map<string, string[]>();
@@ -90,9 +96,29 @@ function assertInputField(
 function collectTargets(manifest: RecipeManifest): ParamTarget[] {
   const targets: ParamTarget[] = [manifest.seed.target];
   for (const param of Object.values(manifest.params)) {
-    targets.push(param.target);
+    if (param.type === 'text') {
+      targets.push(param.target);
+    } else if (param.target) {
+      targets.push(param.target);
+    }
   }
   return targets;
+}
+
+function collectWrites(manifest: RecipeManifest): ManifestWrite[] {
+  const writes: ManifestWrite[] = [];
+  for (const param of Object.values(manifest.params)) {
+    if (param.type !== 'enum') continue;
+    for (const opt of param.options) {
+      if (opt.writes) writes.push(...opt.writes);
+    }
+  }
+  for (const rule of manifest.derived ?? []) {
+    for (const list of Object.values(rule.table)) {
+      writes.push(...list);
+    }
+  }
+  return writes;
 }
 
 function validateRecipe(
@@ -107,6 +133,14 @@ function validateRecipe(
     assertTargetFields(manifest.id, graph, nodeId, target);
     titleToNodeId.set(target.title, nodeId);
   }
+
+  for (const write of collectWrites(manifest)) {
+    assertWriteTarget(manifest.id, write.title, write.field, titleIndex, graph);
+    const nodeId = requireUniqueTitle(manifest.id, write.title, titleIndex);
+    titleToNodeId.set(write.title, nodeId);
+  }
+
+  assertDerivedRules(manifest.id, manifest, titleIndex, graph);
 
   const outId = requireUniqueTitle(manifest.id, manifest.output.title, titleIndex);
   assertTargetFields(manifest.id, graph, outId, {
@@ -138,7 +172,8 @@ async function loadOneRecipe(dir: string): Promise<Recipe> {
     await readFile(path.join(dir, 'workflow.api.json'), 'utf8'),
   );
 
-  const manifest = manifestSchema.parse(manifestRaw);
+  const parsed = manifestSchema.parse(manifestRaw);
+  const manifest = normalizeManifestSizes(parsed);
   if (manifest.id !== folder) {
     throw new Error(
       `Recipe folder "${folder}" does not match manifest id "${manifest.id}"`,

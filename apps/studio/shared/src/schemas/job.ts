@@ -41,7 +41,7 @@ export const adminJobSchema = userJobSchema.extend({
 
 export const createGenerationRequestSchema = z.object({
   tool: jobToolSchema,
-  prompt: z.string().min(1).max(1000),
+  prompt: z.string().min(1).max(2000),
   values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
   variant: z.string().optional(),
   inputAssetIds: z.array(z.string().min(1)).max(4).default([]),

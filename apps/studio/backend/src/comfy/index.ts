@@ -23,6 +23,7 @@ export type {
 } from './types.js';
 export {
   collectOutputFromHistory,
+  findOutputFiles,
   historyLooksDone,
   type CollectedOutput,
 } from './collect-output.js';

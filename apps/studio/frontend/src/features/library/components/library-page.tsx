@@ -1,13 +1,10 @@
 'use client';
 
 import type { AssetDto } from '@studio/shared';
-import { Heart, ImageIcon, Images, Video } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Lightbox } from '@/components/ui/lightbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Composer,
@@ -21,153 +18,11 @@ import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/errors';
 import { assetUrl } from '@/lib/files';
-import {
-  useDeleteLibraryAsset,
-  useLibraryInfinite,
-  useToggleFavorite,
-} from '../hooks';
-import { LibraryGrid, LibraryGridSkeleton } from './library-grid';
+import { LibraryPane } from './library-pane';
 
 function toastApiError(err: unknown): void {
   const code = err instanceof ApiError ? err.code : undefined;
   toast.error(errorMessage(code));
-}
-
-function LibraryPane({
-  kind,
-  favoritedOnly,
-  selected,
-  selectedIds,
-  maxSelect,
-  onToggleSelect,
-}: {
-  kind: AssetDto['kind'] | undefined;
-  favoritedOnly: boolean;
-  selected: AssetDto[];
-  selectedIds: Set<string>;
-  maxSelect: number;
-  onToggleSelect: (asset: AssetDto) => void;
-}) {
-  const router = useRouter();
-  const query = useLibraryInfinite(kind, favoritedOnly);
-  const del = useDeleteLibraryAsset();
-  const favorite = useToggleFavorite();
-  const [lightbox, setLightbox] = useState<AssetDto | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-
-  const items = useMemo(
-    () => query.data?.pages.flatMap((p) => p.items) ?? [],
-    [query.data],
-  );
-
-  const lightboxIndex = lightbox
-    ? items.findIndex((a) => a.id === lightbox.id)
-    : -1;
-
-  if (query.isLoading) {
-    return <LibraryGridSkeleton />;
-  }
-
-  if (items.length === 0) {
-    const icon = favoritedOnly ? (
-      <Heart strokeWidth={1.5} />
-    ) : kind === 'video' ? (
-      <Video strokeWidth={1.5} />
-    ) : kind === 'image' ? (
-      <ImageIcon strokeWidth={1.5} />
-    ) : (
-      <Images strokeWidth={1.5} />
-    );
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <EmptyState
-          className="py-0"
-          icon={icon}
-          title={
-            favoritedOnly
-              ? 'No favorites yet'
-              : kind === 'video'
-                ? 'No videos yet'
-                : 'No generations yet'
-          }
-          description={
-            favoritedOnly
-              ? 'Tap the heart on any image or video to save it here.'
-              : kind === 'video'
-                ? 'Video tools will appear here when available.'
-                : 'Create something and it will show up in your library.'
-          }
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <LibraryGrid
-        items={items}
-        hasMore={Boolean(query.hasNextPage)}
-        loadingMore={query.isFetchingNextPage}
-        selectedIds={selectedIds}
-        onLoadMore={() => {
-          if (query.hasNextPage && !query.isFetchingNextPage) {
-            void query.fetchNextPage();
-          }
-        }}
-        onOpen={setLightbox}
-        onEdit={(asset) => {
-          router.push(`/create/?tool=image&base=${asset.id}`);
-        }}
-        onDelete={(asset) => setConfirmId(asset.id)}
-        onToggleFavorite={(asset) => {
-          favorite.mutate(asset.id, {
-            onError: toastApiError,
-          });
-        }}
-        onToggleSelect={(asset) => {
-          if (asset.kind !== 'image') return;
-          if (
-            !selectedIds.has(asset.id) &&
-            selected.length >= maxSelect
-          ) {
-            toast.error(`You can select up to ${maxSelect} images`);
-            return;
-          }
-          onToggleSelect(asset);
-        }}
-      />
-
-      {lightbox && lightboxIndex >= 0 ? (
-        <Lightbox
-          src={assetUrl(lightbox.id)}
-          alt="Library item"
-          onClose={() => setLightbox(null)}
-          hasPrev={lightboxIndex > 0}
-          hasNext={lightboxIndex < items.length - 1}
-          onPrev={() => setLightbox(items[lightboxIndex - 1] ?? null)}
-          onNext={() => setLightbox(items[lightboxIndex + 1] ?? null)}
-        />
-      ) : null}
-
-      <ConfirmDialog
-        open={Boolean(confirmId)}
-        title="Delete this file?"
-        description="This cannot be undone."
-        confirmLabel="Delete"
-        danger
-        onConfirm={() => {
-          if (confirmId) {
-            del.mutate(confirmId);
-            setLightbox((cur) => (cur?.id === confirmId ? null : cur));
-          }
-          setConfirmId(null);
-        }}
-        onOpenChange={(open) => {
-          if (!open) setConfirmId(null);
-        }}
-      />
-    </div>
-  );
 }
 
 const tabTriggerClass =
@@ -221,7 +76,7 @@ export function LibraryPage() {
     if (!imageTool) return;
     setSubmitting(true);
     try {
-      const created = await createThread.mutateAsync(undefined);
+      const created = await createThread.mutateAsync({ tool: 'image' });
       const threadId = created.thread.id;
       await createGen.mutateAsync({
         threadId,
@@ -250,30 +105,34 @@ export function LibraryPage() {
     onToggleSelect: toggleSelect,
   };
 
+  const showComposer = selected.length > 0 && Boolean(imageTool);
+
   return (
     <div
       className={cn(
         'flex h-full min-h-full w-full min-w-0 flex-col',
-        selected.length > 0 && 'pb-2',
+        // Room so the last tiles clear the fixed composer (+ mobile tab bar).
+        showComposer &&
+          'pb-[calc(12rem+var(--safe-bottom))] md:pb-[calc(11rem+var(--safe-bottom))]',
       )}
     >
       <h1 className="shrink-0 text-3xl font-semibold tracking-tight text-foreground">
         Library
       </h1>
       <Tabs
-        defaultValue="image"
+        defaultValue="all"
         className="mt-5 flex min-h-0 flex-1 flex-col"
       >
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <TabsList className="h-auto gap-1 rounded-none border-0 bg-transparent p-0">
+            <TabsTrigger value="all" className={tabTriggerClass}>
+              All
+            </TabsTrigger>
             <TabsTrigger value="image" className={tabTriggerClass}>
               Images
             </TabsTrigger>
             <TabsTrigger value="video" className={tabTriggerClass}>
               Videos
-            </TabsTrigger>
-            <TabsTrigger value="all" className={tabTriggerClass}>
-              All
             </TabsTrigger>
           </TabsList>
           <button
@@ -295,6 +154,12 @@ export function LibraryPage() {
           </button>
         </div>
         <TabsContent
+          value="all"
+          className="relative mt-5 min-h-0 flex-1 data-[state=inactive]:hidden"
+        >
+          <LibraryPane kind={undefined} {...paneProps} />
+        </TabsContent>
+        <TabsContent
           value="image"
           className="relative mt-5 min-h-0 flex-1 data-[state=inactive]:hidden"
         >
@@ -306,19 +171,15 @@ export function LibraryPage() {
         >
           <LibraryPane kind="video" {...paneProps} />
         </TabsContent>
-        <TabsContent
-          value="all"
-          className="relative mt-5 min-h-0 flex-1 data-[state=inactive]:hidden"
-        >
-          <LibraryPane kind={undefined} {...paneProps} />
-        </TabsContent>
       </Tabs>
 
-      {selected.length > 0 && imageTool ? (
+      {showComposer && imageTool ? (
         <div
           className={cn(
-            'sticky bottom-0 z-20 mt-4 min-w-0 pt-3',
-            'pb-[max(0.5rem,var(--safe-bottom))]',
+            'fixed inset-x-0 z-30 px-4 md:left-60 md:px-8',
+            // Sit above the mobile tab bar; flush to bottom on desktop.
+            'bottom-[calc(3.75rem+var(--safe-bottom))] md:bottom-0',
+            'pt-4 pb-[max(0.75rem,var(--safe-bottom))] md:pb-4',
           )}
         >
           <div className="mx-auto w-full min-w-0 max-w-4xl">

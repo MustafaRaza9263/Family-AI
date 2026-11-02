@@ -8,6 +8,7 @@ import type { LimitsService } from '../limits/limits.service.js';
 import type { AssetRepository } from '../db/repositories/asset-repository.js';
 import type { JobRepository } from '../db/repositories/job-repository.js';
 import type { SettingsRepository } from '../db/repositories/settings-repository.js';
+import type { MediaTools } from '../media/types.js';
 import type { Telemetry } from '../telemetry/types.js';
 import { cancelJob } from './cancel.js';
 import {
@@ -43,6 +44,7 @@ export type CreateWorkerOpts = {
   limits: LimitsService;
   hub: EventHub;
   telemetry: Telemetry;
+  media: MediaTools;
   clock: Clock;
   logger: Logger;
   dataDir: string;
@@ -97,6 +99,7 @@ export function createQueueWorker(opts: CreateWorkerOpts): QueueWorker {
         hub: opts.hub,
         telemetry: opts.telemetry,
         limits: opts.limits,
+        media: opts.media,
         clock: opts.clock,
         logger: opts.logger,
         dataDir: opts.dataDir,
@@ -161,6 +164,7 @@ export function createQueueWorker(opts: CreateWorkerOpts): QueueWorker {
         jobs: opts.jobs,
         assets: opts.assets,
         limits: opts.limits,
+        media: opts.media,
         hub: opts.hub,
         clock: opts.clock,
         logger: opts.logger,

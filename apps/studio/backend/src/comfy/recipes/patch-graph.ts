@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { ApiGraph } from './graph-schema.js';
-import type { RecipeParam } from './manifest-schema.js';
+import type { ManifestWrite, RecipeParam } from './manifest-schema.js';
 import type { Recipe } from './recipe.js';
 
 export type PatchValues = Record<string, string>;
@@ -13,8 +13,10 @@ export type PatchInputImage = {
 
 export type PatchResult = {
   graph: ApiGraph;
-  resolved: { width?: number; height?: number; [key: string]: string | number | undefined };
+  resolved: { width?: number; height?: number; frames?: number; [key: string]: string | number | undefined };
 };
+
+const VIDEO_FPS = 24;
 
 function writeFields(
   graph: ApiGraph,
@@ -23,9 +25,7 @@ function writeFields(
   values: unknown[],
 ): void {
   const node = graph[nodeId];
-  if (!node) {
-    throw new Error(`Internal: missing node ${nodeId}`);
-  }
+  if (!node) throw new Error(`Internal: missing node ${nodeId}`);
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i];
     if (field === undefined) continue;
@@ -33,40 +33,108 @@ function writeFields(
   }
 }
 
-function resolveParam(
-  name: string,
-  param: RecipeParam,
-  raw: string | undefined,
+function applyWrites(
+  recipe: Recipe,
+  graph: ApiGraph,
+  writes: readonly ManifestWrite[],
   resolved: PatchResult['resolved'],
-): unknown[] {
-  if (param.type === 'text') {
-    if (raw === undefined) {
-      throw new Error(`Missing required param "${name}"`);
+): void {
+  for (const write of writes) {
+    const nodeId = recipe.titleToNodeId.get(write.title);
+    if (!nodeId) throw new Error(`Internal: missing title ${write.title}`);
+    writeFields(graph, nodeId, [write.field], [write.value]);
+    if (typeof write.value === 'number') {
+      // Image recipes write IN_SIZE.width/height; video uses IN_WIDTH/IN_HEIGHT.value.
+      if (write.field === 'width' || write.title === 'IN_WIDTH') {
+        resolved.width = write.value;
+      }
+      if (write.field === 'height' || write.title === 'IN_HEIGHT') {
+        resolved.height = write.value;
+      }
+      if (write.title === 'IN_DURATION' && write.field === 'value') {
+        resolved.frames = write.value * VIDEO_FPS + 1;
+      }
     }
-    if (raw.length > param.maxLength) {
-      throw new Error(`Param "${name}" exceeds maxLength ${param.maxLength}`);
-    }
-    resolved[name] = raw;
-    return param.target.fields.map(() => raw);
   }
+}
 
+function resolveEnum(
+  name: string,
+  param: Extract<RecipeParam, { type: 'enum' }>,
+  raw: string | undefined,
+  recipe: Recipe,
+  graph: ApiGraph,
+  resolved: PatchResult['resolved'],
+): void {
   const value = raw ?? param.default;
   const option = param.options.find((opt) => opt.value === value);
   if (!option) {
     throw new Error(`Param "${name}" has invalid value "${value}"`);
   }
   resolved[name] = value;
-  if (option.sizes) {
-    const { width, height } = option.sizes;
-    resolved.width = width;
-    resolved.height = height;
-    return param.target.fields.map((field) => {
-      if (field === 'width') return width;
-      if (field === 'height') return height;
-      throw new Error(`Param "${name}" sizes cannot map field "${field}"`);
-    });
+
+  if (option.writes && option.writes.length > 0) {
+    applyWrites(recipe, graph, option.writes, resolved);
+    return;
   }
-  return param.target.fields.map(() => value);
+
+  if (!param.target) return;
+  const nodeId = recipe.titleToNodeId.get(param.target.title);
+  if (!nodeId) {
+    throw new Error(`Internal: missing title ${param.target.title}`);
+  }
+  writeFields(
+    graph,
+    nodeId,
+    param.target.fields,
+    param.target.fields.map(() => value),
+  );
+}
+
+function resolveText(
+  name: string,
+  param: Extract<RecipeParam, { type: 'text' }>,
+  raw: string | undefined,
+  recipe: Recipe,
+  graph: ApiGraph,
+  resolved: PatchResult['resolved'],
+): void {
+  if (raw === undefined) throw new Error(`Missing required param "${name}"`);
+  if (raw.length > param.maxLength) {
+    throw new Error(`Param "${name}" exceeds maxLength ${param.maxLength}`);
+  }
+  resolved[name] = raw;
+  const nodeId = recipe.titleToNodeId.get(param.target.title);
+  if (!nodeId) {
+    throw new Error(`Internal: missing title ${param.target.title}`);
+  }
+  writeFields(
+    graph,
+    nodeId,
+    param.target.fields,
+    param.target.fields.map(() => raw),
+  );
+}
+
+function applyDerived(
+  recipe: Recipe,
+  graph: ApiGraph,
+  resolved: PatchResult['resolved'],
+): void {
+  for (const rule of recipe.manifest.derived ?? []) {
+    const [fromA, fromB] = rule.from;
+    const a = resolved[fromA];
+    const b = resolved[fromB];
+    if (typeof a !== 'string' || typeof b !== 'string') {
+      throw new Error(`Derived rule missing values for ${fromA}|${fromB}`);
+    }
+    const key = `${a}|${b}`;
+    const writes = rule.table[key];
+    if (!writes) {
+      throw new Error(`Derived rule has no entry for "${key}"`);
+    }
+    applyWrites(recipe, graph, writes, resolved);
+  }
 }
 
 function applyImages(
@@ -95,9 +163,7 @@ function applyImages(
     const input = inputs[i];
     if (!slot || !input) continue;
     const nodeId = recipe.titleToNodeId.get(slot.title);
-    if (!nodeId) {
-      throw new Error(`Internal: missing title ${slot.title}`);
-    }
+    if (!nodeId) throw new Error(`Internal: missing title ${slot.title}`);
     writeFields(graph, nodeId, [slot.field], [input.filename]);
     resolved[`image${i + 1}`] = input.filename;
   }
@@ -108,13 +174,9 @@ function applyImages(
     if (!slot?.detach) continue;
     for (const d of slot.detach) {
       const nodeId = recipe.titleToNodeId.get(d.title);
-      if (!nodeId) {
-        throw new Error(`Internal: missing title ${d.title}`);
-      }
+      if (!nodeId) throw new Error(`Internal: missing title ${d.title}`);
       const node = graph[nodeId];
-      if (!node) {
-        throw new Error(`Internal: missing node ${nodeId}`);
-      }
+      if (!node) throw new Error(`Internal: missing node ${nodeId}`);
       const nextInputs: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(node.inputs)) {
         if (key !== d.input) nextInputs[key] = value;
@@ -153,14 +215,14 @@ export function patchGraph(
   }
 
   for (const [name, param] of Object.entries(manifest.params)) {
-    const values = resolveParam(name, param, input.values[name], resolved);
-    const nodeId = titleToNodeId.get(param.target.title);
-    if (!nodeId) {
-      throw new Error(`Internal: missing title ${param.target.title}`);
+    if (param.type === 'text') {
+      resolveText(name, param, input.values[name], recipe, graph, resolved);
+    } else {
+      resolveEnum(name, param, input.values[name], recipe, graph, resolved);
     }
-    writeFields(graph, nodeId, param.target.fields, values);
   }
 
+  applyDerived(recipe, graph, resolved);
   applyImages(recipe, graph, input.inputs ?? [], resolved);
 
   const seedNodeId = titleToNodeId.get(manifest.seed.target.title);

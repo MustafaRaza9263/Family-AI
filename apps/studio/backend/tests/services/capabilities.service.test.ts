@@ -9,10 +9,10 @@ describe('CapabilitiesService', () => {
     const limits = {
       remaining: async () => ({
         image: { dailyRuns: 100, used: 0, remaining: 100 },
-        video: { dailyRuns: 10, used: 0, remaining: 10 },
+        video: { dailyRuns: 25, used: 0, remaining: 25 },
       }),
       resolvedLimits: async () => ({
-        dailyRuns: { image: 100, video: 10 },
+        dailyRuns: { image: 100, video: 25 },
         perUserRunning: 1,
         perUserQueued: 3,
         globalQueued: 30,

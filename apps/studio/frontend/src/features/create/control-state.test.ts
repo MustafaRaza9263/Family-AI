@@ -142,3 +142,89 @@ describe('control-state', () => {
     expect(storageKey('image')).toBe('studio.controls.image');
   });
 });
+
+const videoTool: ToolCapability = {
+  id: 'video',
+  label: 'Video',
+  attachments: {
+    max: 2,
+    slots: [{ label: 'Start frame' }, { label: 'End frame' }],
+  },
+  modes: [
+    {
+      inputImages: { min: 0, max: 0 },
+      label: 'From text',
+      placeholder: 'Describe the video',
+      controls: [
+        {
+          id: 'prompt',
+          type: 'text',
+          label: 'Prompt',
+          group: 'primary',
+          default: '',
+        },
+        {
+          id: 'aspectRatio',
+          type: 'enum',
+          label: 'Aspect',
+          group: 'primary',
+          default: '16:9',
+          options: [
+            { value: '16:9', label: 'Wide' },
+            { value: '9:16', label: 'Tall' },
+          ],
+        },
+        {
+          id: 'duration',
+          type: 'enum',
+          label: 'Duration',
+          group: 'settings',
+          default: '5',
+          options: [
+            { value: '5', label: '5s' },
+            { value: '10', label: '10s' },
+          ],
+        },
+      ],
+    },
+    {
+      inputImages: { min: 1, max: 1 },
+      label: 'From image',
+      placeholder: 'Describe how the start frame comes alive',
+      slots: [{ label: 'Start frame' }],
+      controls: [
+        {
+          id: 'prompt',
+          type: 'text',
+          label: 'Prompt',
+          group: 'primary',
+          default: '',
+        },
+      ],
+    },
+    {
+      inputImages: { min: 2, max: 2 },
+      label: 'Between frames',
+      placeholder: 'Describe how the first frame becomes the last',
+      slots: [{ label: 'Start frame' }, { label: 'End frame' }],
+      controls: [
+        {
+          id: 'prompt',
+          type: 'text',
+          label: 'Prompt',
+          group: 'primary',
+          default: '',
+        },
+      ],
+    },
+  ],
+};
+
+describe('video mode selection', () => {
+  it('picks text / image / between-frames by attachment count', () => {
+    expect(resolveMode(videoTool, 0)?.label).toBe('From text');
+    expect(resolveMode(videoTool, 1)?.label).toBe('From image');
+    expect(resolveMode(videoTool, 2)?.label).toBe('Between frames');
+  });
+});
+

@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Clapperboard,
   Copy,
   Download,
   ImagePlus,
@@ -57,6 +58,7 @@ export function GenerationActions({
   canAddReference,
   onEdit,
   onAddReference,
+  onAnimate,
   onRegenerate,
   onDelete,
 }: {
@@ -66,6 +68,7 @@ export function GenerationActions({
   canAddReference: boolean;
   onEdit: () => void;
   onAddReference: () => void;
+  onAnimate?: () => void;
   onRegenerate: () => void;
   onDelete: () => void;
 }) {
@@ -82,6 +85,16 @@ export function GenerationActions({
       >
         <ImagePlus className="size-4" />
       </IconAction>
+      {onAnimate ? (
+        <IconAction
+          label="Animate"
+          onClick={onAnimate}
+          disabled={!assetId}
+          primary
+        >
+          <Clapperboard className="size-4" />
+        </IconAction>
+      ) : null}
       {assetId ? (
         <IconAction
           label="Download"

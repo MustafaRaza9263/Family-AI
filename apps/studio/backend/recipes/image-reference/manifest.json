@@ -16,7 +16,7 @@
       "type": "text",
       "label": "Prompt",
       "group": "primary",
-      "maxLength": 1000,
+      "maxLength": 2000,
       "target": {
         "title": "IN_PROMPT",
         "fields": [

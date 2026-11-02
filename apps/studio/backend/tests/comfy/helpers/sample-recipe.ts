@@ -1,11 +1,12 @@
 import type { ApiGraph } from '../../../src/comfy/recipes/graph-schema.js';
 import type { RecipeManifest } from '../../../src/comfy/recipes/manifest-schema.js';
+import { normalizeManifestSizes } from '../../../src/comfy/recipes/normalize-manifest.js';
 import type { Recipe } from '../../../src/comfy/recipes/recipe.js';
 
 export function sampleManifest(
   overrides: Partial<RecipeManifest> = {},
 ): RecipeManifest {
-  return {
+  const base: RecipeManifest = {
     id: 'image-create-fast',
     tool: 'image',
     timeoutSeconds: 120,
@@ -53,6 +54,8 @@ export function sampleManifest(
     output: { title: 'OUT_IMAGE', prefixField: 'filename_prefix' },
     ...overrides,
   };
+  // Match boot: sizes become writes so patchGraph has one path.
+  return normalizeManifestSizes(base);
 }
 
 export function sampleGraph(): ApiGraph {

@@ -12,9 +12,10 @@ import type {
   JobRepository,
 } from '../db/repositories/job-repository.js';
 import type { Telemetry } from '../telemetry/types.js';
+import type { MediaTools } from '../media/types.js';
 import { publishQueuePositions } from './positions.js';
 import { stageFromNodeClass } from './stage.js';
-import { writeGeneratedImage } from './write-output.js';
+import { writeImageOutput, writeVideoOutput } from './write-output.js';
 
 export type AbortMap = Map<string, AbortController>;
 
@@ -25,6 +26,7 @@ export type RunJobDeps = {
   hub: EventHub;
   telemetry: Telemetry;
   limits: LimitsService;
+  media: MediaTools;
   clock: Clock;
   logger: Logger;
   dataDir: string;
@@ -98,26 +100,39 @@ export async function runClaimedJob(
       },
     });
 
-    const image = result.outputs[0];
-    if (!image) {
+    const outputBytes = result.outputs[0];
+    if (!outputBytes) {
       throw new EngineError(
         EngineErrorCodes.ENGINE_BAD_OUTPUT,
         'Image engine produced no output',
       );
     }
-    const width =
-      typeof result.resolved.width === 'number' ? result.resolved.width : 0;
-    const height =
-      typeof result.resolved.height === 'number' ? result.resolved.height : 0;
-    const written = await writeGeneratedImage({
-      dataDir: deps.dataDir,
-      job,
-      bytes: image,
-      width,
-      height,
-      assets: deps.assets,
-      createdAt: deps.clock.now(),
-    });
+    const createdAt = deps.clock.now();
+    const written =
+      job.tool === 'video'
+        ? await writeVideoOutput({
+            dataDir: deps.dataDir,
+            job,
+            bytes: outputBytes,
+            assets: deps.assets,
+            media: deps.media,
+            createdAt,
+          })
+        : await writeImageOutput({
+            dataDir: deps.dataDir,
+            job,
+            bytes: outputBytes,
+            width:
+              typeof result.resolved.width === 'number'
+                ? result.resolved.width
+                : 0,
+            height:
+              typeof result.resolved.height === 'number'
+                ? result.resolved.height
+                : 0,
+            assets: deps.assets,
+            createdAt,
+          });
     const finishedAt = deps.clock.now();
     await deps.jobs.finish(job.id, {
       status: 'done',
@@ -133,6 +148,7 @@ export async function runClaimedJob(
           width: written.width,
           height: written.height,
           bytes: written.bytes,
+          frames: written.frames,
         },
       }),
     );

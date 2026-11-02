@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-10-31
+> Last updated: 2026-11-02
 
 ## 1. What this is
 
@@ -12,7 +12,7 @@ On-premise AI assistants and creative tools for the company, powered by one self
 | 1 | `seven-towers-bot` | Q&A on the Seven Towers project from ≤10 pages of company data, for the public (prospective buyers). Proof of concept | In development |
 | 2 | `hub-bot` | Bosses-only assistant over the cloud CRM / EMS / HR / CMS via tool calling | Planned |
 | 3 | `social-bot` | Replies to WhatsApp / social comments / app reviews, human approval for decisions | Planned |
-| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Image flows live (Fast / Best / Edit / Combine + uploads); video recipes next |
+| 4 | `studio` | Staff-only image and video generation app (accounts, job queue, fixed presets) on top of ComfyUI | Image + LTX video flows live (text / image / first-last); library Videos; frame extract |
 
 Build order: 1 → 2 → 3. `studio` is a parallel track and shares the GPU with bot 1.
 
@@ -56,13 +56,13 @@ company-ai/
 │   └── studio/             npm workspaces: shared · backend · frontend (full tree in §8.13)
 │       ├── shared/         Zod schemas + types used by both sides (@studio/shared, built to dist/)
 │       ├── backend/
-│       │   ├── src/        compose · config · routes · controllers · services · db · middleware · lib · telemetry · comfy · queue · events · limits
-│       │   ├── recipes/<id>/   manifest.json · workflow.api.json   (one folder per recipe)
-│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke · queue-smoke · api-smoke · flows-smoke
+│       │   ├── src/        compose · config · routes · controllers · services · media · db · middleware · lib · telemetry · comfy · queue · events · limits
+│       │   ├── recipes/<id>/   manifest.json · workflow.api.json   (image + LTX video)
+│       │   ├── scripts/    seed-admin · telemetry-demo · comfy-smoke · queue-smoke · api-smoke · flows-smoke · video-smoke
 │       │   ├── tests/
 │       │   └── .env.example
 │       └── frontend/       Next.js App Router (static export → out/)
-│           └── src/        app · components/{ui,layout} · features/{auth,create(+attachments),library,admin,events,notifications} · hooks · lib
+│           └── src/        app · components/{ui,layout} · features/{auth,create(+tool-ui,attachments),library,admin,events,notifications} · hooks · lib
 ├── infra/
 │   ├── vllm/               docker-compose.yml · .env.example
 │   └── comfyui/            Dockerfile · docker-compose.yml · workflows/ (UI-format originals) · .env (gitignored)
@@ -153,10 +153,10 @@ Staff (marketing first) generate images and videos from one simple branded app. 
 4. A single worker loop claims the next eligible job when the engine is ready and not paused.
 5. The worker reads each input asset file from disk (missing file → `INVALID_INPUT` + refund). `comfy.run` uploads each to ComfyUI (`POST /upload/image`, subfolder `studio`, name `studio/<jobId>_<n>.png`), `patchGraph` writes LoadImage filenames (+ detach unused reference slots), allowed params, a **fresh random seed** and `filename_prefix`, then `POST /prompt`.
 6. One persistent WebSocket delivers progress; the worker maps node class → UI stage and publishes `job.progress` (never node/class/recipe names). Telemetry gets `runStart` / `runEvent` / `runEnd`.
-7. On success: bytes → `DATA_DIR/<userId>/<assetId>.png`, WebP thumb (sharp, max 512 px), `assets` insert (`source: generated`), job `done`, `job.done`, `usage_daily.gpuSeconds` += runMs/1000.
+7. On success: bytes written under `DATA_DIR/<userId>/` — image → `.png` + sharp WebP thumb; video → `.mp4` (+ audio when the graph emits it) + ffmpeg poster WebP thumb, with `durationSec` from probe. `assets` insert (`source: generated`, kind `image`|`video`), job `done`, `job.done`, `usage_daily.gpuSeconds` += runMs/1000.
 8. On failure/cancel: map to job `errorCode`, refund when the rules say so, publish `job.failed` / `job.cancelled`.
 
-HTTP adapters for generate / uploads / events / files / library / capabilities / admin are wired (section 8.7). Why it stays fast: in-memory graph patch; one WebSocket; warm-up at boot; no LLM hop.
+HTTP adapters for generate / uploads / events / files (incl. Range for video) / frame extract / library / capabilities / admin are wired (section 8.7). Why it stays fast: in-memory graph patch; one WebSocket; warm-up at boot; no LLM hop.
 
 ### 8.3 One pipeline for create and edit
 
@@ -168,31 +168,32 @@ The UI has **one composer per output type** (Image, Video) inside a thread. A th
 | image | 0 | best | `image-create-quality` | Flux Klein text-to-image |
 | image | 1 | — | `image-edit` | Flux Klein image-to-image |
 | image | 2–4 | — | `image-reference` | Flux Klein multi-image |
-| video | 0 | — | `video-from-text` | LTX-2.5 text-to-video |
-| video | 1 | — | `video-from-image` | LTX-2.5 image-to-video |
-| video | 2 (first, last) | — | `video-between-frames` | LTX-2.5 first/last frame |
+| video | 0 | quality enum | `video-from-text` | LTX-2.5 text-to-video |
+| video | 1 | quality enum | `video-from-image` | LTX-2.5 image-to-video |
+| video | 2 (Start, End) | quality enum | `video-between-frames` | LTX-2.5 first/last frame |
 
 Rules:
 
-- **The working image is explicit state, not a guess.** After a result appears, it becomes the thread's *working image* and shows as the first attachment with label "Editing this image" and an ✕. The next message with it attached is an edit. Removing it makes the next message a new image; dismissal is remembered per thread in `sessionStorage` (try/catch guarded). On reload, the working image is derived from the thread's last done result unless dismissed. Sent as `inputAssetIds`; the server never infers intent from the prompt text.
-- **Mode chip** on the composer shows the picked mode's `label` (Create / Edit / Combine) and its `placeholder`. Fast / Best quality appears only when more than one variant covers the current attachment count (i.e. 0 images). Variant is sent only when that control is visible. Remembered control prefs survive mode switches.
-- Any earlier result (Edit action), library image (**Use as base** → `/create/?tool=image&base=<assetId>`, consumed once), or upload can become the working image or a reference. Each edit is a new job; `parentAssetId` is set only for 1-image edits.
-- 2–4 attached images switch to **Combine** (`image-reference`) automatically. One workflow covers 2–4; unused trailing slots are **detached** at patch time so example/placeholder images are never fed. Video from an image result remains an "Animate" action once LTX recipes exist.
+- **Threads are tool-locked.** `POST /threads` requires `tool` `image`|`video`; list may filter `?tool=`; generations must match the thread tool. Image threads keep a *working image* chip; video threads do **not** (slots are Start/End frames only).
+- **The working image is explicit state, not a guess (image tool only).** After a result appears, it becomes the thread's *working image* and shows as the first attachment with an ✕. The next message with it attached is an edit. Removing it makes the next message a new image; dismissal is remembered per thread in `sessionStorage` (try/catch guarded). On reload, the working image is derived from the thread's last done result unless dismissed. Sent as `inputAssetIds`; the server never infers intent from the prompt text.
+- **Mode chip** on the composer shows the picked mode's `label` (Create / Edit / Combine / From image / Between frames) and its `placeholder`. Image Fast / Best quality appears only when more than one **variant** covers the current attachment count (i.e. 0 images). Video **quality** and **duration** are enum params (inline in the toolbar, not variants). Remembered control prefs survive mode switches.
+- Any earlier image result (Edit), library image (**Use as base** → `/create/?tool=image&base=<assetId>`, consumed once), or upload can become the working image or a reference. **Animate** on an image result → `/create/?tool=video&base=<assetId>` (new video thread; image becomes Start frame, param consumed once). Video **Continue** → `POST /assets/:id/frame` with `at: last`, then seeds Start frame in the same video thread.
+- 2–4 attached images switch to **Combine** (`image-reference`) automatically. One workflow covers 2–4; unused trailing slots are **detached** at patch time so example/placeholder images are never fed. Video accepts 0–2 frame images (Start then End; End slot appears only after Start is filled).
 - No LLM router. No `promptRefs` token rewrite for v1 (users write natural language, e.g. "image 1 in the scene of image 2").
 - Input images: user uploads via `POST /api/uploads` (stored as Studio assets); at run time the worker POSTs bytes to ComfyUI `/upload/image` as `studio/<jobId>_<n>.png`.
-- **Aspect ratio** is a user control for Create (Fast and Best), Edit, and Combine — same four presets (multiples of 16). Edit does **not** lock to the input image's aspect; the user may change framing via `IN_SIZE`.
+- **Aspect ratio** is a user control for image Create / Edit / Combine and all video modes — same four product presets (1:1 · 4:5 · 16:9 · 9:16). Image sizes stay multiples of 16 via `IN_SIZE`; video sizes come from server-only **derived** tables writing `IN_WIDTH` / `IN_HEIGHT` (standard vs HD). Edit does **not** lock to the input image's aspect.
 - Klein graphs keep the **prompt upsampler ON** (`Upsampler on/off` switch `true`) for quality/edit/reference.
-- Every image run counts as **1** against the daily image limit regardless of mode or attachment count. Max **4** reference images.
+- Every image run counts as **1** against the daily image limit; every video run counts as **1** against the daily video limit (default **25**/day). Max **4** image references; max **2** video frame slots.
 - Z-Image and Klein are different model families, so alternating Fast ↔ Best can reload a model. Watch `warm` in `flows:smoke` / admin run log; a later scheduler may group by family.
-- Capabilities are driven by the recipes present. Modes expose `label`, `placeholder`, controls, and variants; `attachments.max` is the highest `inputImages.max` among modes for that tool (4 for image today).
+- Capabilities are driven by the recipes present. Modes expose `label`, `placeholder`, optional `slots` (e.g. Start frame / End frame), controls, and variants; tool `attachments.max` / `attachments.slots` come from the richest mode for that tool (4 for image, 2 for video).
 
 ### 8.4 Recipes (the ComfyUI contract)
 
 - One folder per recipe in `backend/recipes/<id>/`: `workflow.api.json` (ComfyUI **Workflow → Export (API)**) and `manifest.json`. Path from env `RECIPES_DIR` (default `./recipes`). Partner-node templates ("Flux 3 Image: Text to Image" / "Image Edit") are not used — Comfy starts with `--disable-api-nodes`.
-- **Manifest shape:** `id`, `tool`, `timeoutSeconds`, **`match`** `{ tool, inputImages:{min,max}, label, placeholder, variant? }`, `params` (text/enum with presentation + targets), `seed`, `output`, optional **`images`**: `[{ title, field, detach? }]` where `detach` is `[{ title, input }]` for unused trailing slots. Boot: `images.length === inputImages.max`; slots at index ≥ `min` must declare `detach`; required slots must not. Overlap / default-variant rules unchanged.
-- **Match + presentation:** each param has `label`, optional lucide `icon` (kebab-case), `group` `primary`|`settings`; enum options have `label` and optional `icon`. `sizes` and `target` stay server-only and never appear in `GET /capabilities`. Mode `label` / `placeholder` are public.
-- **Nodes are found by title, never by id.** Titles: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `IN_IMAGE_BATCH`, `IN_REFERENCES`, `OUT_IMAGE` (and `OUT_VIDEO` later). Node ids may look like `"57:8"` or `"128:107"`. Boot refuses missing/duplicate titles or missing target fields.
-- **`patchGraph(recipe, { jobId, values, inputs? })`:** structuredClone; write params; write each attached LoadImage `field` to the Comfy-stored filename; for unused trailing slots apply `detach` (rebuild that node's `inputs` without those keys); fresh seed (`crypto.randomInt`, exclusive upper bound 2**48); `filename_prefix = studio/<jobId>`; return resolved values. Never mutates disk.
+- **Manifest shape:** `id`, `tool`, `timeoutSeconds`, **`match`** `{ tool, inputImages:{min,max}, label, placeholder, variant?, slots? }`, `params` (text/enum with presentation + `target` and/or per-option **`writes`** / legacy `sizes`), optional **`derived`** rules (`from` param ids → table of title/field/value writes), `seed`, `output`, optional **`images`**: `[{ title, field, detach? }]`. Boot normalizes option `sizes` → `writes`, validates derived coverage, `images.length === inputImages.max`; slots at index ≥ `min` must declare `detach`; required slots must not. Overlap / default-variant rules unchanged.
+- **Match + presentation:** each param has `label`, optional lucide `icon` (kebab-case), `group` `primary`|`settings`; enum options have `label` and optional `icon`. `sizes` / `writes` / `derived` / `target` stay server-only and never appear in `GET /capabilities`. Mode `label` / `placeholder` / `slots` are public.
+- **Nodes are found by title, never by id.** Image titles: `IN_PROMPT`, `IN_SIZE`, `IN_SAMPLER`, `IN_IMAGE_1…4`, `IN_IMAGE_BATCH`, `IN_REFERENCES`, `OUT_IMAGE`. Video titles: `IN_PROMPT`, `IN_WIDTH`, `IN_HEIGHT`, `IN_DURATION` (seconds → frames as `value * 24 + 1` at patch), `IN_SAMPLER` (`noise_seed`), `IN_IMAGE_1` / `IN_IMAGE_2`, `OUT_VIDEO`. Node ids may look like `"57:8"` or `"128:107"`. Boot refuses missing/duplicate titles or missing target fields.
+- **`patchGraph(recipe, { jobId, values, inputs? })`:** structuredClone; write params (target and/or option writes); apply **derived** tables; write each attached LoadImage `field` to the Comfy-stored filename; for unused trailing slots apply `detach`; fresh seed (`crypto.randomInt`, exclusive upper bound 2**48); `filename_prefix = studio/<jobId>`; return resolved values (incl. width/height/frames when known). Never mutates disk.
 - **Live image recipes:**
 
 | Recipe id | timeoutSeconds | match | Notes |
@@ -202,7 +203,15 @@ Rules:
 | `image-edit` | 240 | 1 image · Edit · no variant | Klein I2I; `images: [IN_IMAGE_1]`; aspect via `IN_SIZE`; upsampler on |
 | `image-reference` | 300 | 2–4 images · Combine · no variant | One graph; `IN_IMAGE_1…4` + detach on slots 3–4 targeting `IN_IMAGE_BATCH` / `IN_REFERENCES`; aspect via `IN_SIZE`; upsampler on |
 
-Aspect presets (all multiples of 16): 1:1 → 1024×1024 · 4:5 → 896×1120 · 16:9 → 1344×768 · 9:16 → 768×1344. Prompt `maxLength` 1000 on every image recipe.
+- **Live video recipes (LTX-2.5 distilled, with audio):**
+
+| Recipe id | timeoutSeconds | match | Notes |
+|---|---|---|---|
+| `video-from-text` | 900 | 0 images · Create | Aspect + quality + duration; derived → `IN_WIDTH`/`IN_HEIGHT`; duration writes `IN_DURATION.value` (seconds) |
+| `video-from-image` | 900 | 1 image · From image · slot Start frame | Same controls; `IN_IMAGE_1` LoadImage |
+| `video-between-frames` | 1200 | 2 images · Between frames · Start + End | Same controls; `IN_IMAGE_1` + `IN_IMAGE_2` |
+
+Image aspect presets (multiples of 16): 1:1 → 1024×1024 · 4:5 → 896×1120 · 16:9 → 1344×768 · 9:16 → 768×1344. Video pixel sizes (derived, standard / HD): 1:1 768² / 1024² · 4:5 640×832 / 832×1024 · 16:9 1024×576 / 1408×768 · 9:16 576×1024 / 768×1408. Duration presets: 5 / 8 / 10 s. Prompt `maxLength` **2000** on every image and video recipe.
 
 **Fast (Z-Image) title map:**
 
@@ -225,9 +234,9 @@ Self-contained module; the only Studio code that talks to ComfyUI. Must not impo
 
 - **Interfaces (tests use fakes):** `ComfyHttp` (submit / history / view / interrupt / queue → `{running,pending}` / `clearPrompt` / ping / **`uploadImage({ bytes, filename, subfolder })` → stored name**) · `ComfyEvents` (subscribe by `prompt_id` / `isConnected`).
 - **Socket:** one persistent WebSocket per process, one `clientId`, auto-reconnect with capped backoff; `onConnected` fires on reconnect (not the first open) so warm-up can re-arm; `close()` clears the reconnect timer. Ignores binary preview frames; Zod-parses known text frames; unknown/malformed frames logged at debug and dropped.
-- **`runComfyPrompt`:** subscribe before submit (client supplies `prompt_id`) → hooks (`onSubmitted`, `onCached` with `{nodeId,nodeClass,nodeTitle?}`, `onNodeStart`, `onProgress`) → finish on `execution_success` / `executing` null → read history + `/view` for the `OUT_IMAGE` node (bytes in memory). Safety net: poll history every 5 s. Timeout (manifest `timeoutSeconds`) or `AbortSignal` → `/interrupt` then `ENGINE_TIMEOUT` / `ENGINE_CANCELLED`.
+- **`runComfyPrompt`:** subscribe before submit (client supplies `prompt_id`) → hooks (`onSubmitted`, `onCached` with `{nodeId,nodeClass,nodeTitle?}`, `onNodeStart`, `onProgress`) → finish on `execution_success` / `executing` null → read history + `/view` for the output node (`OUT_IMAGE` or `OUT_VIDEO`; history may list under `images` / `videos` / `gifs`) — bytes in memory. Safety net: poll history every 5 s. Timeout (manifest `timeoutSeconds`) or `AbortSignal` → `/interrupt` then `ENGINE_TIMEOUT` / `ENGINE_CANCELLED`.
 - **Factory:** `createComfy({ env, logger, onReconnect? })` → `{ recipes, run, collect, queue, interrupt, clearPrompt, ping, close }`. **`run(recipeId, { jobId, values, inputImages?, hooks, signal })`** uploads each input as `studio/<jobId>_<n>.png`, passes filenames (+ width/height) into `patchGraph`, then `runComfyPrompt`. Upload failure → `ENGINE_UNAVAILABLE` or `ENGINE_FAILED` by cause.
-- **Smoke:** `npm run comfy:smoke` (single Fast recipe) · **`npm run flows:smoke`** → `scripts/flows-smoke.ts`: one throwaway user; fast → best → edit (uses fast output) → reference-2/3/4 (fast + uploaded PNGs); saves under `./tmp/smoke/flows/`; prints mode / runMs / warm / mem / swap / size; cleans up and exits.
+- **Smoke:** `npm run comfy:smoke` (single Fast recipe) · **`npm run flows:smoke`** → image Fast/Best/Edit/ref-2/3/4 · **`npm run video:smoke`** → LTX text / image / between-frames against a real engine; saves under `./tmp/smoke/`; cleans up and exits.
 
 ### 8.5 Queue, limits, events and composition
 
@@ -237,20 +246,20 @@ Self-contained module; the only Studio code that talks to ComfyUI. Must not impo
 
 #### 8.5.2 Limits (`src/limits/`)
 
-- **Defaults** (`defaults.ts`): image 100 / video 10 daily runs; per user 1 running + 3 queued; global queued cap 30. Merged with `settings.limits` overrides.
+- **Defaults** (`defaults.ts`): image 100 / video **25** daily runs; per user 1 running + 3 queued; global queued cap 30. Merged with `settings.limits` overrides.
 - **Day key:** `YYYY-MM-DD` in `STUDIO_TIMEZONE` (IANA, default UTC).
 - **`reserveRun(userId, tool)`:** atomic `findOneAndUpdate` on `usage_daily` that increments `runs` only while `runs < dailyRuns` (upsert-safe; duplicate-key race retried).
 - **Refund (−1 run)** when: job cancelled while still `queued`; or job fails with `ENGINE_FAILED` | `ENGINE_UNAVAILABLE` | `ENGINE_BAD_OUTPUT` | **`INVALID_INPUT`** (e.g. missing input file at run time). Cancel while running or a finished job counts (no refund).
 - **On job end:** add `runMs/1000` to `gpuSeconds`.
 - **`checkSubmit`:** throws typed `AppError` with only `QUOTA_DAILY` | `QUOTA_ACTIVE` | `QUEUE_FULL` (also in `@studio/shared` error codes). `remaining(userId)` → per tool `{ dailyRuns, used, remaining }`.
-- Enforced product limits: prompt ≤1,000 chars · ≤4 `inputAssetIds` · uploads jpeg/png/webp ≤10 MB (longest side ≤2048 after sanitize) · fixed aspect presets · per-job Comfy timeout from the recipe manifest · uploads rate limit 30/min/user.
+- Enforced product limits: prompt ≤**2,000** chars · ≤4 `inputAssetIds` (image) / ≤2 (video frames) · uploads jpeg/png/webp ≤10 MB (longest side ≤2048 after sanitize) · fixed aspect / quality / duration presets · per-job Comfy timeout from the recipe manifest · uploads rate limit 30/min/user · frame extract rate limit 30/min/user.
 
 #### 8.5.3 Scheduler and worker (`src/queue/`)
 
 - **Scheduler** (`scheduler.ts`, pure): `orderQueue(queued, lastServedAt)` → images before videos; within a tool band, least-recently-served user first (round-robin); within a user, oldest `timings.queuedAt` first. Index 0 is next; index+1 is the 1-based SSE position.
 - **One worker loop** (`worker.ts`): woken by an EventEmitter or a 2 s timer. Sets `busy` before any await so overlapping wakes cannot double-claim. Skips while `settings.enginePaused` or engine ping state is `unavailable`. Claims atomically (`queued` → `running`, `attempts++`).
 - **Engine monitor** (`engine-state.ts`): ping every `ENGINE_PING_INTERVAL_MS` (default 10_000) → `ready` | `unavailable`; `paused` overlays from settings; publishes `engine` events. Admin `PATCH /admin/engine` calls `setPaused` immediately (does not wait for the next ping) and wakes the worker.
-- **Run** (`run-job.ts`): `Map<jobId, AbortController>` for cancel; load input asset bytes from disk; `comfy.run({…, inputImages })` with hooks → telemetry + hub. Stage from node class (`stage.ts`): `Sampler` → `generating`, `VAEDecode`/`Save*` → `finishing`, else `preparing`. Success writes file + sharp WebP thumb (`write-output.ts`), inserts asset, finishes job. Telemetry/publish failures never break the loop.
+- **Run** (`run-job.ts`): `Map<jobId, AbortController>` for cancel; load input asset bytes from disk; `comfy.run({…, inputImages })` with hooks → telemetry + hub. Stage from node class (`stage.ts`): sampler / LTX video sampler classes → `generating`, `VAEDecode`/`Save*` → `finishing`, else `preparing`. Success: image → `write-image-output.ts` (PNG + sharp thumb); video → `write-video-output.ts` (mp4 + ffmpeg poster thumb + `durationSec`) via `media/ffmpeg-media.ts` (`FFMPEG_PATH`). Telemetry/publish failures never break the loop.
 - **Cancel** (`cancel.ts`): queued → `cancelled` immediately + refund; running → abort controller (Comfy `/interrupt`), ends as `cancelled` (no refund).
 - **Recovery** (`recovery.ts`) at boot for each `running` job: history has output → `comfy.collect` + finish `done`; Comfy still holds the prompt → interrupt/clear + requeue; else requeue if `attempts < 2`, otherwise fail `ENGINE_FAILED` + refund. If Comfy is unreachable, leave jobs alone (worker will not claim while unavailable).
 - **Warm-up** (`warm-up.ts`): once at boot and after socket reconnect, when idle and nothing queued, one throwaway `image-create-fast` run (no job row, no usage, no telemetry). Awaited cancel before a real claim so `/interrupt` cannot kill the user job. Skipped if a real job arrives first.
@@ -277,7 +286,7 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 
 #### 8.5.5 Generation service
 
-`GenerationService.createGeneration(userId, threadId, input)`: Zod-validate `{ tool, prompt, values, variant?, inputAssetIds }` → validate each input asset (owner, kind `image`, not deleted; wrong count for tool → `UNSUPPORTED_COMBINATION`; bad asset → `INVALID_INPUT`) → `pickRecipe` / `pickMode` (SOT table in 8.3; four image recipes on disk) → `checkSubmit` → `reserveRun` → insert job (`parentAssetId` only when exactly one input) → wake worker → `job.queued`. User job DTO exposes `inputAssetIds`, never `recipeId`. HTTP wraps this via `GenerationQueryService` (202 + `toUserJob`, cancel via `worker.cancel`, first-prompt thread title).
+`GenerationService.createGeneration(userId, threadId, input)`: Zod-validate `{ tool, prompt, values, variant?, inputAssetIds }` (prompt max 2000) → thread tool must match → validate each input asset (owner, kind `image`, not deleted; wrong count for tool → `UNSUPPORTED_COMBINATION`; bad asset → `INVALID_INPUT`) → `pickRecipe` / `pickMode` (SOT table in 8.3; four image + three video recipes on disk) → `checkSubmit` → `reserveRun` → insert job (`parentAssetId` only when exactly one input on image edit) → wake worker → `job.queued`. User job DTO exposes `inputAssetIds`, never `recipeId`. HTTP wraps this via `GenerationQueryService` (202 + `toUserJob`, cancel via `worker.cancel`, first-prompt thread title).
 
 #### 8.5.6 Uploads
 
@@ -288,14 +297,15 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 - `npm run queue:smoke` → `scripts/queue-smoke.ts`: real Mongo + real engine; two throwaway users; A×3 + B×1 via `GenerationService`; prints queue order, every hub event, final statuses, `job_metrics` (including `warm`); deletes users/files; exits by itself. Stop any other Studio backend (`dev`) first so two workers do not share the queue.
 - `npm run api:smoke` → `scripts/api-smoke.ts`: against a running server (`http://127.0.0.1:4001`); `SMOKE_EMAIL` / `SMOKE_PASSWORD`; login → capabilities → create thread → one generation → SSE until `job.done` → download file → print summary → exit.
 - `npm run flows:smoke` → `scripts/flows-smoke.ts`: real Mongo + engine; one throwaway user; runs Fast, Best, Edit, reference-2/3/4; writes PNGs to `./tmp/smoke/flows/`; prints timing/warm/memory table; cleans up; exits.
+- `npm run video:smoke` → `scripts/video-smoke.ts`: real Mongo + engine; text / image / between-frames LTX paths; writes under `./tmp/smoke/`; cleans up; exits. Stop extra workers first.
 
 ### 8.6 Data model (MongoDB, database `studio`)
 
 - `users`: email, fullName, passwordHash, role `user` | `admin`, status `pending` | `active` | `disabled`, createdAt, updatedAt, …
 - `sessions`: server-side sessions (httpOnly cookie).
-- `threads`: userId, title, createdAt, updatedAt, deletedAt?.
+- `threads`: userId, **tool** `image`\|`video`, title, createdAt, updatedAt, deletedAt?.
 - `jobs`: userId, threadId, tool (`image`\|`video`), recipeId, variant?, status `queued`\|`running`\|`done`\|`failed`\|`cancelled`, prompt, params (validated user-facing values), inputAssetIds, outputAssetIds, parentAssetId?, comfyPromptId?, errorCode?, attempts, timings `{ queuedAt, startedAt?, finishedAt? }`. Indexes: `{ status, tool, timings.queuedAt }`, `{ userId, status }`, `{ threadId }`.
-- `assets`: userId, threadId?, jobId?, kind `image`\|`video`, filePath, thumbPath, mime, bytes, width, height, durationSec?, source `upload`\|`generated`, parentAssetId?, createdAt, deletedAt?.
+- `assets`: userId, threadId?, jobId?, kind `image`\|`video`, filePath, thumbPath, mime, bytes, width, height, durationSec?, source `upload`\|`generated`\|**`derived`** (frame extract), parentAssetId?, createdAt, deletedAt?.
 - `asset_favorites`: userId, assetId, createdAt. Unique `{ userId, assetId }` — per-user library favorites (heart).
 - `usage_daily`: userId, day (`YYYY-MM-DD` in `STUDIO_TIMEZONE`), tool, runs, gpuSeconds. Unique index `{ userId, day, tool }`.
 - `audit_logs`: admin actions (e.g. admin viewing another user’s non-thumb asset via `GET /files/:id`).
@@ -304,17 +314,17 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 
 ### 8.7 API surface (`/api`)
 
-Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; includes `inputAssetIds` and optional `parentAssetId`. Admin job DTO includes `recipeId`. Capabilities modes expose `label`, `placeholder`, `inputImages`, optional `variant`, and `controls`; tool `attachments.max` is derived from recipes. Serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words (no-leak test covers all image modes). Shared error codes include `INVALID_INPUT`, `UPLOAD_TOO_LARGE`, `UPLOAD_INVALID` (friendly copy on the frontend).
+Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), and `DEPARTMENTS` live in `@studio/shared`. User job DTO never includes `recipeId` / node / model / workflow names; includes `inputAssetIds` and optional `parentAssetId`. Admin job DTO includes `recipeId`. Capabilities modes expose `label`, `placeholder`, `inputImages`, optional `variant` / `slots`, and `controls`; tool `attachments.max` (+ `slots`) is derived from recipes. Asset DTO includes optional `durationSec` and source `derived`. Thread DTO includes `tool`. Serialized JSON must not leak `IN_`/`OUT_` titles, recipe ids, or model words (no-leak test covers image + video modes). Shared error codes include `INVALID_INPUT`, `UPLOAD_TOO_LARGE`, `UPLOAD_INVALID` (friendly copy on the frontend).
 
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/logout` · `GET /me` |
-| Capabilities | `GET /capabilities` (product, engine state, tools/modes/controls/labels/placeholders, per-tool quota remaining, activeCap) |
-| Threads | `POST /threads` · `GET /threads` (cursor, newest first) · `GET /threads/:id` (thread + items `[{job,assets}]`) · `DELETE /threads/:id` (soft delete + unlink asset files) |
-| Generate | `POST /threads/:id/generations` (202 + job; rate limit 30/min/user) · `GET /generations/:id` · `DELETE /generations/:id` (cancel) |
+| Capabilities | `GET /capabilities` (product, engine state, tools/modes/controls/labels/placeholders/slots, per-tool quota remaining, activeCap) |
+| Threads | `POST /threads` (`{ tool, title? }`) · `GET /threads` (`?tool=` optional; cursor, newest first) · `GET /threads/:id` (thread + items `[{job,assets}]`) · `DELETE /threads/:id` (soft delete + unlink asset files) |
+| Generate | `POST /threads/:id/generations` (202 + job; tool must match thread; rate limit 30/min/user) · `GET /generations/:id` · `DELETE /generations/:id` (cancel) |
 | Uploads | `POST /uploads` (multipart `file`; jpeg/png/webp ≤10 MB; sanitize + PNG; rate 30/min/user) |
 | Live | `GET /events` (SSE; event shapes in `@studio/shared`) |
-| Files | `GET /files/:assetId` (`?thumb=1`, `?download=1`; `Cache-Control: private, immutable`; path from DB only) · `DELETE /assets/:id` (owner or admin) |
+| Files | `GET /files/:assetId` (`?thumb=1`, `?download=1`; **HTTP Range** for video seek; `Cache-Control: private, immutable`; path from DB only) · `DELETE /assets/:id` (owner or admin) · **`POST /assets/:id/frame`** (`{ at: first\|last }` → derived image asset; rate 30/min/user) |
 | Library | `GET /library?kind=image\|video&source=generated\|upload&favorited=true\|false&cursor&limit` (own, not deleted; **default source `generated`**; `favorited=true` filters to favorites) · `POST /assets/:id/favorite` (toggle; `{ favorited }`) |
 | Admin | `GET/PATCH /admin/users` · `GET /admin/jobs` · `GET /admin/runs` · `GET /admin/runs/:jobId` · `GET/PATCH /admin/engine` · `GET/PATCH /admin/settings` |
 
@@ -333,19 +343,21 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.10 UI
 
-- Screens: Login · Request account (with a pending-approval state) · Home (greeting, composer, recent) · Create image (thread) · Create video (thread; when recipes exist) · Library / My Generations (All / Images / Videos; Favorites chip; heart on each tile; download, delete, **Use as base**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
-- **Composer (mode-driven, no per-recipe UI code):** single shell — attachments (when any) + autosize prompt + toolbar. Attachment count + optional variant → `pickMode` → mode chip beside thumbs, placeholder, and only that mode's controls. Toolbar: attach (+), fan-out aspect pill, Fast/Best quality pill (hidden/disabled with images), quota meta, circular send (Enter submits). Sources = device upload, drag-and-drop, paste, (library picker can use `source=upload|generated`). Client type/size checks for fast feedback; server is authority. Working image is the first attachment (section 8.3). Generation cards: "Based on" strip from `inputAssetIds`; actions Edit / Add as reference (disabled at limit) / Download / Regenerate (keeps prompt, values, variant, **and** `inputAssetIds`) / Copy prompt / Delete. Every mode costs one run.
-- The mockup's separate per-tool pages collapse into the two thread composers above. Removed from the mockup: the model dropdown and "Model" field, Google/SSO login, the Audio to Audio tile (until a recipe exists), "approval email" copy.
-- Stack: Next.js static export (`output: 'export'`, `trailingSlash`, one `/create/` page reading `?tool=` and optional `?base=` / `?thread=`) · Tailwind v4 · Radix (`radix-ui`) · Motion · lucide · TanStack Query · react-hook-form + Zod · `next-themes` (light/dark/system, no flash) · `sonner` toasts · self-hosted Inter Variable. No external assets; strict CSP.
+- Screens: Login · Request account (with a pending-approval state) · Home (greeting, New image / New video, recent with tool icons) · Create image / Create video (thread) · Library / My Generations (**All** default first · Images · Videos; Favorites chip; heart; download; delete; image **Use as base** / video **Use as Start frame**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
+- **Tool registry** (`features/create/tool-ui.ts`): one entry per tool — icon, title, "New …" label, attachment style (`numbered` image / `slots` video), result card component. Sidebar + Home use it; never show model / node / workflow / recipe names.
+- **Composer (mode-driven, no per-recipe UI code):** single shell — optional attachments tray (Motion height/fade) + taller autosize prompt (max 2000) + toolbar. Attachment count + optional variant → `pickMode` → mode chip, placeholder, controls. **Image toolbar:** + attach, aspect pill, Fast/Best when applicable, quota ("N of 100 images left today"), send. **Video toolbar:** frames icon (toggles Start/End slots; End after Start), aspect pill, **inline** quality + duration enum pills (no settings popup), quota ("N of 25 videos left today"), send. First video attach can preselect nearest aspect unless the user already changed it. Sources = upload / drop / paste / library. Working image chip is image-only (section 8.3).
+- **Generation cards:** image — Based on / Edit / Add as reference / **Animate** / Download / Regenerate / Copy / Delete; lightbox for stills. Video — poster preview (click → **VideoLightbox** with `object-contain`, same as library so portrait/story are not cropped); queued shows position + "Videos can take a few minutes"; running shows stage + % + progress bar + timer; done actions Continue / Download / Regenerate / Copy / Delete. Notifications: "Your video is ready" when the finished job tool is video.
+- **Library:** All / Images / Videos; video tiles autoplay muted loop with duration badge; click opens VideoLightbox (player, Use as Start frame via last-frame extract, download, delete). Composer dock is **fixed** to the bottom of the viewport when images are selected (no dark shade behind it).
+- Stack: Next.js static export (`output: 'export'`, `trailingSlash`, `/create/?tool=image|video` + optional `base` / `thread`) · Tailwind v4 · Radix · Motion · lucide · TanStack Query · react-hook-form + Zod · `next-themes` · `sonner` · self-hosted Inter Variable. No external assets; strict CSP.
 
 ### 8.11 Run and status
 
-- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke` · `npm run api:smoke` · **`npm run flows:smoke`**.
-- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`, `STUDIO_TIMEZONE` (IANA, default UTC), `RETENTION_DAYS` (default 30), `ENGINE_PING_INTERVAL_MS` (default 10000). All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`). Smoke: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, optional `SMOKE_BASE_URL`.
-- **Storage:** results and uploads under `DATA_DIR/<userId>/` (`<assetId>.png` + `.thumb.webp`); retention soft-delete after `RETENTION_DAYS`. Smoke PNGs under `./tmp/smoke/` and `./tmp/smoke/flows/` (gitignored). Dependencies: `sharp` (linux-arm64 prebuilt) for thumbs/sanitize; **`multer`** for multipart uploads.
-- **Status (2026-10-31):** ComfyUI isolation verified; auth + admin live; job pipeline + telemetry live; **all four image recipes live** (`image-create-fast`, `image-create-quality`, `image-edit`, `image-reference` with detach); **uploads** (`POST /uploads`) + library `?source=`; Comfy `uploadImage` + worker input wiring; **frontend** mode-driven composer, attachment tray, working-image chip, Based on / Edit / Add as reference / Use as base, regenerate keeps inputs. HTTP contract includes capabilities labels/placeholders. **Not yet:** LTX video recipes; video UI; scheduler grouping by model family; upscaling recipes.
-- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy (including image patch + detach), manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak, upload sanitiser, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Frontend Vitest: control-state, attachment reducer, paste/drop helper, error copy (incl. `UPLOAD_*`), notification decisions, SSE cache updater. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke`, **`flows:smoke`** on the Spark (stop extra workers before queue/flows smoke; `api:smoke` needs `dev:backend` up).
-- **Next:** LTX video recipes (text / image / first-last) → timing matrix for video quotas → optional scheduler by model family → upscaling (needs custom nodes).
+- **Workspaces:** `apps/studio` root `npm install` links `shared`, `backend`, `frontend`. Scripts: `npm run dev:backend` (API :4001) · `npm run dev:frontend` (UI :3001) · `npm run typecheck | lint | test` · `npm run build -w @studio/shared` before building the others. Backend also: `npm run seed:admin` · `npm run telemetry:demo` · `npm run comfy:smoke` · `npm run queue:smoke` · `npm run api:smoke` · **`npm run flows:smoke`** · **`npm run video:smoke`**.
+- **Backend env (`.env.example`):** `NODE_ENV`, `PORT=4001`, `LOG_LEVEL`, `MONGODB_URI`, `COMFY_URL` (default `http://127.0.0.1:8188`; compose uses `http://comfyui:8188`), `RECIPES_DIR` (default `./recipes`), `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS`, `TRUST_PROXY`, `CORS_ORIGIN`, `DATA_DIR`, `TELEMETRY_ENABLED`, `TELEMETRY_SAMPLE_INTERVAL_MS`, `TELEMETRY_RETENTION_DAYS`, `STUDIO_TIMEZONE` (IANA, default UTC), `RETENTION_DAYS` (default 30), `ENGINE_PING_INTERVAL_MS` (default 10000), **`FFMPEG_PATH`** (default `ffmpeg`). All validated with Zod at boot (`TELEMETRY_ENABLED` is an explicit `'true'|'false'` string — never `z.coerce.boolean()`). Smoke: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, optional `SMOKE_BASE_URL`.
+- **Storage:** results and uploads under `DATA_DIR/<userId>/` (image `<assetId>.png` + `.thumb.webp`; video `<assetId>.mp4` + poster `.thumb.webp`); retention soft-delete after `RETENTION_DAYS`. Smoke under `./tmp/smoke/` and `./tmp/smoke/flows/` (gitignored). Dependencies: `sharp` (thumbs/sanitize); **`multer`**; host **ffmpeg**/ffprobe via `FFMPEG_PATH` (not an npm package).
+- **Status (2026-11-02):** ComfyUI isolation verified; auth + admin live; job pipeline + telemetry live; **four image recipes** + **three LTX video recipes** live; uploads + library; Comfy `uploadImage` + worker input wiring; **ffmpeg** write/probe/frame extract; HTTP Range on files; thread `tool`; **frontend** image + video composers (`tool-ui`, slots, inline quality/duration, Animate / Continue, VideoLightbox, library Videos). **Not yet:** scheduler grouping by model family; upscaling recipes; full video timing matrix to retune quotas.
+- **Test approach:** no fake ComfyUI HTTP server. Unit/HTTP tests: auth, sessions, admin, env, telemetry, comfy (image + video patch, writes/derived, collect video), manifest match rules, `pickMode`/`pickRecipe`, capabilities no-leak (image + video), upload sanitiser, frame endpoint, files Range, thread tool, DTO mappers, scheduler/limits/worker/hub, route ownership/admin/quota/cancel/SSE. Frontend Vitest: control-state (incl. video modes), tool registry, slots, nearest-aspect, Continue helper, video status, attachment reducer, paste/drop, error copy, notification decisions, SSE cache updater. Real GPU: `telemetry:demo`. Real engine: `comfy:smoke`, `queue:smoke`, `api:smoke`, **`flows:smoke`**, **`video:smoke`** on the Spark (stop extra workers before queue/flows/video smoke; `api:smoke` needs `dev:backend` up).
+- **Next:** video timing matrix (resolutions × durations) → retune video daily quota / timeouts → optional scheduler by model family → upscaling (needs custom nodes).
 
 ### 8.12 Telemetry (per-job metrics)
 
@@ -385,10 +397,14 @@ apps/studio/
 │   │   ├── image-create-fast/     manifest.json · workflow.api.json
 │   │   ├── image-create-quality/  manifest.json · workflow.api.json
 │   │   ├── image-edit/            manifest.json · workflow.api.json
-│   │   └── image-reference/       manifest.json · workflow.api.json
+│   │   ├── image-reference/       manifest.json · workflow.api.json
+│   │   ├── video-from-text/       manifest.json · workflow.api.json
+│   │   ├── video-from-image/      manifest.json · workflow.api.json
+│   │   └── video-between-frames/  manifest.json · workflow.api.json
 │   ├── scripts/
 │   │   ├── seed-admin.ts · telemetry-demo.ts
 │   │   ├── comfy-smoke.ts · queue-smoke.ts · api-smoke.ts · flows-smoke.ts
+│   │   └── video-smoke.ts
 │   ├── src/
 │   │   ├── server.ts · app.ts · compose.ts
 │   │   ├── config/env.ts
@@ -396,14 +412,15 @@ apps/studio/
 │   │   │                  threads · generations · events · files · library · uploads
 │   │   ├── controllers/   auth · admin-users · admin-studio · health
 │   │   │                  capabilities · threads · generations · events
-│   │   │                  files · library · uploads
+│   │   │                  files · frame · library · uploads
 │   │   ├── services/      auth · session · admin-users · admin-studio
 │   │   │                  generation · generation-query · pick-recipe
-│   │   │                  capabilities · thread · files · library · upload
+│   │   │                  capabilities · thread · files · frame · library · upload
+│   │   ├── media/         ffmpeg-media.ts · types.ts
 │   │   ├── uploads/       sanitize-image.ts
 │   │   ├── mappers/       job · asset · thread · admin-run
 │   │   ├── middleware/    session · require-auth · validate · security · origin-check
-│   │   │                  rate-limits (incl. uploads 30/min) · request-logger
+│   │   │                  rate-limits (uploads + frame 30/min) · request-logger
 │   │   │                  error-handler · not-found · frontend-static
 │   │   ├── db/            mongo.ts · indexes.ts · documents.ts
 │   │   │   └── repositories/  user · session · thread · job · asset · favorite
@@ -414,7 +431,8 @@ apps/studio/
 │   │   ├── limits/        defaults · day-key · limits.service
 │   │   ├── events/        hub.ts
 │   │   ├── queue/         scheduler · stage · worker · run-job · cancel · recovery
-│   │   │                  warm-up · retention · engine-state · positions · write-output
+│   │   │                  warm-up · retention · engine-state · positions
+│   │   │                  write-output · write-image-output · write-video-output
 │   │   ├── telemetry/     (self-contained; wired from the worker)
 │   │   │   ├── index.ts · create-telemetry.ts · types.ts · schema.ts
 │   │   │   ├── config.ts · persist.ts · run-tracker.ts
@@ -427,22 +445,25 @@ apps/studio/
 │   │       ├── http.ts (incl. uploadImage) · socket.ts · ws-messages.ts
 │   │       ├── run-prompt.ts · run-prompt-handlers.ts
 │   │       ├── resolve-node.ts · collect-output.ts
-│   │       └── recipes/   manifest-schema · graph-schema · recipe
-│   │                      load-recipes · patch-graph · match-validation
+│   │       └── recipes/   manifest-schema · normalize-manifest · validate-derived
+│   │                      graph-schema · recipe · load-recipes · patch-graph
+│   │                      match-validation
 │   └── tests/
 │       ├── auth · session · admin · password · env · origin-and-errors
 │       ├── helpers/test-app.ts · test-studio-app.ts
 │       ├── fakes/         memory-*-repository · fake-comfy · fake-comfy-client
-│       ├── routes/        studio-api
+│       ├── routes/        studio-api · files-range · frame-endpoint · thread-tool
 │       ├── shared/        pick-mode
 │       ├── mappers/       job
 │       ├── uploads/       sanitize-image
+│       ├── media/         ffmpeg-media
 │       ├── telemetry/     …
 │       ├── comfy/         … · match-validation · patch-graph-images
-│       ├── queue/         scheduler · worker
+│       │                  patch-graph-video · collect-output-video · manifest-writes
+│       ├── queue/         scheduler · worker · write-video-output
 │       ├── limits/        limits.service
 │       ├── events/        hub
-│       └── services/      pick-recipe · capabilities
+│       └── services/      pick-recipe · capabilities · capabilities-video
 └── frontend/                       (@studio/frontend)
     ├── package.json · tsconfig.json · next.config.ts · eslint.config.mjs · vitest.config.ts
     ├── AGENTS.md · README.md
@@ -459,13 +480,15 @@ apps/studio/
         │   └── ui/        button · input · textarea · field · card · badge · avatar
         │                  spinner · skeleton · toaster · dropdown-menu · confirm-dialog
         │                  password-input · dialog · popover · tabs · tooltip · select
-        │                  segmented · chip · empty-state · lightbox
+        │                  segmented · chip · empty-state · lightbox · video-lightbox
         ├── features/
         │   ├── auth/      api · hooks · schemas · forms · guards
-        │   ├── create/    api · hooks · control-state · composer · generation cards
-        │   │              attachments/ (types · reducer · tray · enqueue-uploads
-        │   │              extract-image-files · working-image-storage)
-        │   ├── library/   api · hooks · library-page · grid (Use as base)
+        │   ├── create/    api · hooks · control-state · tool-ui · composer
+        │   │              generation / video-generation cards · enum-pill
+        │   │              nearest-aspect · continue-from-video · resolve-tool-id
+        │   │              attachments/ (types · reducer · tray · slots
+        │   │              enqueue-uploads · extract-image-files · working-image-storage)
+        │   ├── library/   api · hooks · library-page · library-pane · grid
         │   ├── admin/     api · hooks · users · engine · admin-shell
         │   ├── events/    apply-event · use-studio-events · job-live
         │   └── notifications/  decisions · sound · title · provider · controls
@@ -493,7 +516,7 @@ apps/studio/
 
 ## 10. Engineering practices
 
-- **Layers:** routes (URL → controller) → controllers (HTTP only) → services (logic) → guardrails (judge input/output). One file, one job; aim for ≤150 lines. Studio adds `compose.ts` (composition root), `comfy/` (only code that speaks to ComfyUI), `queue/` (only code that picks and runs jobs), `limits/`, `events/`, and `telemetry/` (per-job metrics; no Comfy/Express imports).
+- **Layers:** routes (URL → controller) → controllers (HTTP only) → services (logic) → guardrails (judge input/output). One file, one job; aim for ≤150 lines. Studio adds `compose.ts` (composition root), `comfy/` (only code that speaks to ComfyUI), `queue/` (only code that picks and runs jobs), `media/` (ffmpeg probe/thumb/frame), `limits/`, `events/`, and `telemetry/` (per-job metrics; no Comfy/Express imports).
 - **Safety:** TypeScript `strict`, no `any`; Zod validation at every boundary (env, request bodies, recipe manifests, telemetry rows, SSE events). Studio shares schemas between backend and frontend through `@studio/shared`.
 - **Readability:** explicit names; comments explain *why*; no clever abstractions. A junior should follow every line.
 - **Config:** only through validated env; `.env.example` committed; secrets never in Git.
@@ -542,6 +565,11 @@ apps/studio/
 | Edit exposes the same aspect-ratio presets as Create (user-writable `IN_SIZE`) | Designers can reframe; earlier "snap to input aspect only" idea dropped |
 | Uploads: multer + sharp sanitize to PNG ≤2048, library `source` filter | Server is authority; attach picker can list uploads without mixing them into My Generations by default |
 | `flows:smoke` covers Fast / Best / Edit / ref-2/3/4 | Timing and warm rates for timeout tuning and model-thrash watch |
+| Three LTX video recipes with `writes` / `derived` (aspect×quality → width/height; duration seconds → frames) | One product surface for text / image / first-last without exposing graphs |
+| Thread documents carry `tool`; generations must match | Keeps image and video conversations separate; sidebar/home filter cleanly |
+| Video daily quota default 25; prompt max 2000 | Video runs are longer; longer prompts help motion+audio direction |
+| Host ffmpeg for probe, poster thumb, and `POST /assets/:id/frame` | No extra npm media stack; Range-enabled file serve for seeking |
+| Frontend `tool-ui` registry + slots tray + VideoLightbox | Adding a tool is one registry entry; portrait/story use contain lightbox like library |
 
 ## 12. Open items
 
@@ -553,8 +581,8 @@ apps/studio/
 - Domain name for Cloudflare Tunnel.
 - Backup target for MongoDB (bot and Studio) and Studio files.
 - Final model choice via evals.
-- Studio: run `flows:smoke` on the Spark and lock `timeoutSeconds` from the timing table; watch Fast↔Best `warm=false` rate.
-- Studio: export API-format graphs with titled nodes for the three LTX video modes (text / image / first-last); timing table (resolutions × durations) to set video quotas and presets.
+- Studio: run `flows:smoke` + `video:smoke` on the Spark and lock `timeoutSeconds` from the timing tables; watch Fast↔Best and LTX `warm=false` rates.
+- Studio: full video timing matrix (resolutions × durations × quality) → retune daily video quota (25) and presets if needed.
 - Studio: revisit daily image/video budgets after the full timing matrix.
 - Studio: attribution wording required by the Klein and LTX licenses when model names are hidden.
 - Studio: scheduler improvement to group queued jobs by model family; measure bot slowdown during video jobs and decide when to pause video during bot busy hours.

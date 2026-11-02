@@ -11,6 +11,8 @@ function toRecord(doc: ThreadDocument): ThreadRecord {
   return {
     id: doc._id.toHexString(),
     userId: doc.userId.toHexString(),
+    // Legacy threads predate tool; image was the only composer then.
+    tool: doc.tool ?? 'image',
     title: doc.title,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
@@ -29,6 +31,7 @@ export class MongoThreadRepository implements ThreadRepository {
     const doc: ThreadDocument = {
       _id: new ObjectId(),
       userId: new ObjectId(input.userId),
+      tool: input.tool,
       title: input.title,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
@@ -65,14 +68,27 @@ export class MongoThreadRepository implements ThreadRepository {
       userId: new ObjectId(opts.userId),
       deletedAt: { $exists: false },
     };
+    if (opts.tool) {
+      // Legacy rows without tool count as image.
+      filter.$or =
+        opts.tool === 'image'
+          ? [{ tool: 'image' }, { tool: { $exists: false } }]
+          : [{ tool: opts.tool }];
+    }
     if (opts.before && ObjectId.isValid(opts.before.id)) {
-      filter.$or = [
+      const beforeClause = [
         { updatedAt: { $lt: opts.before.updatedAt } },
         {
           updatedAt: opts.before.updatedAt,
           _id: { $lt: new ObjectId(opts.before.id) },
         },
       ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: beforeClause }];
+        delete filter.$or;
+      } else {
+        filter.$or = beforeClause;
+      }
     }
     const docs = await this.threads
       .find(filter)

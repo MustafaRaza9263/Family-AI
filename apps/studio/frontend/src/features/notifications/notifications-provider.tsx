@@ -1,6 +1,7 @@
 'use client';
 
 import { PRODUCT_NAME, studioEventSchema } from '@studio/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   useCallback,
@@ -11,6 +12,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import {
+  jobTool,
+  readyNotificationBody,
+} from '@/features/events/apply-event';
 import { readStorage, writeStorage } from '@/lib/storage';
 import { decideNotification } from './decisions';
 import { playSoftBeep } from './sound';
@@ -44,6 +49,7 @@ type Ctx = {
 const NotificationsContext = createContext<Ctx | null>(null);
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
+  const client = useQueryClient();
   const soundEnabled = useSyncExternalStore(
     subscribeSound,
     soundSnapshot,
@@ -89,18 +95,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       if (decision.bumpTitle) bumpReadyTitle();
       if (decision.showBrowserNotification) {
         try {
+          const tool =
+            parsed.data.type === 'job.done'
+              ? jobTool(client, parsed.data.jobId)
+              : undefined;
           new Notification(PRODUCT_NAME, {
             body:
               eventType === 'job.failed'
                 ? 'A generation failed'
-                : 'Your generation is ready',
+                : readyNotificationBody(tool),
           });
         } catch {
           // Ignore blocked notifications.
         }
       }
     },
-    [permission, soundEnabled],
+    [client, permission, soundEnabled],
   );
 
   const value = useMemo(

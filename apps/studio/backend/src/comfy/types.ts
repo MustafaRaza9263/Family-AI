@@ -11,6 +11,8 @@ export type ComfyHistoryEntry = {
     string,
     {
       images?: ComfyImageRef[];
+      videos?: ComfyImageRef[];
+      gifs?: ComfyImageRef[];
     }
   >;
   status?: {

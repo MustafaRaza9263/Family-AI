@@ -57,6 +57,15 @@ export interface AssetRepository {
     filePath: string,
     thumbPath: string,
   ): Promise<void>;
+  updateMediaMeta(
+    id: string,
+    meta: {
+      width: number;
+      height: number;
+      bytes: number;
+      durationSec?: number;
+    },
+  ): Promise<void>;
   listOlderThan(cutoff: Date): Promise<AssetRecord[]>;
   softDelete(id: string, at: Date): Promise<void>;
 }

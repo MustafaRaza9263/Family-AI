@@ -16,6 +16,7 @@ import type { CapabilitiesService } from './services/capabilities.service.js';
 import type { ThreadService } from './services/thread.service.js';
 import type { GenerationQueryService } from './services/generation-query.service.js';
 import type { FilesService } from './services/files.service.js';
+import type { FrameService } from './services/frame.service.js';
 import type { LibraryService } from './services/library.service.js';
 import type { UploadService } from './services/upload.service.js';
 import type { AdminStudioService } from './services/admin-studio.service.js';
@@ -52,6 +53,7 @@ export type StudioApiServices = {
   threads: ThreadService;
   generations: GenerationQueryService;
   files: FilesService;
+  frames: FrameService;
   library: LibraryService;
   uploads: UploadService;
   adminStudio: AdminStudioService;
@@ -120,7 +122,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
     app.use('/api', createThreadsRoutes(s.threads, s.generations, limits));
     app.use('/api', createGenerationsRoutes(s.generations));
     app.use('/api', createEventsRoutes(s.hub));
-    app.use('/api', createFilesRoutes(s.files));
+    app.use(
+      '/api',
+      createFilesRoutes(s.files, s.frames, limits?.frames ?? passthrough),
+    );
     app.use('/api', createLibraryRoutes(s.library));
     app.use('/api', createUploadsRoutes(s.uploads, limits));
     app.use('/api', createAdminStudioRoutes(s.adminStudio));

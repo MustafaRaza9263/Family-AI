@@ -29,6 +29,8 @@ const envSchema = z.object({
   STUDIO_TIMEZONE: z.string().min(1).default('UTC'),
   RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   ENGINE_PING_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
+  FFPROBE_PATH: z.string().min(1).default('ffprobe'),
 });
 
 export type Env = z.infer<typeof envSchema>;

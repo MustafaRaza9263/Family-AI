@@ -6,25 +6,33 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { useMe } from '@/features/auth/hooks';
 import { ApiError } from '@/lib/api-client';
 import { errorMessage } from '@/lib/errors';
 import { assetUrl } from '@/lib/files';
-import { useMe } from '@/features/auth/hooks';
 import { firstName, formatThreadDay, localDayKey } from '@/lib/format';
-import {
-  useCancelGeneration,
-  useCreateGeneration,
-  useCreateThread,
-  useDeleteAsset,
-} from '../hooks';
 import type { AttachmentItem } from '../attachments/types';
 import {
   isWorkingDismissed,
   setWorkingDismissed,
 } from '../attachments/working-image-storage';
+import {
+  useCancelGeneration,
+  useCreateGeneration,
+  useCreateThread,
+  useDeleteAsset,
+  useExtractFrame,
+} from '../hooks';
+import { useRegenMap } from '../use-regen-map';
+import {
+  groupThreadItems,
+  keptVersions,
+  activeAttempt,
+  type VersionGroup,
+} from '../version-groups';
 import { Composer, type ComposerSubmit } from './composer';
 import { EmptyHero } from './empty-hero';
-import { GenerationCard } from './generation-card';
+import { ThreadCards } from './thread-cards';
 
 function toastApiError(err: unknown): void {
   const code = err instanceof ApiError ? err.code : undefined;
@@ -40,7 +48,7 @@ export function ThreadView({
   toolId: 'image' | 'video';
   thread: ThreadDetailResponse | null;
   capabilities: CapabilitiesResponse;
-  /** Consumed once from ?base= to start Edit with that asset. */
+  /** Consumed once from ?base= (image edit working / video start frame). */
   initialBaseAssetId?: string;
 }) {
   const router = useRouter();
@@ -50,18 +58,46 @@ export function ThreadView({
   const createGen = useCreateGeneration();
   const cancel = useCancelGeneration();
   const del = useDeleteAsset();
+  const extractFrame = useExtractFrame();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [extraRefs, setExtraRefs] = useState<AttachmentItem[]>([]);
   const [editOverride, setEditOverride] = useState<AttachmentItem | null>(null);
+  const [continueFrame, setContinueFrame] = useState<AttachmentItem | null>(
+    null,
+  );
   const [dismissTick, setDismissTick] = useState(0);
   const [draftPrompt, setDraftPrompt] = useState('');
   const [draftTick, setDraftTick] = useState(0);
   const userName = me.data?.user ? firstName(me.data.user.fullName) : '';
 
+  const threadId = thread?.thread.id;
+  const { map: regenMap, link: linkRegenJob } = useRegenMap(threadId);
+
+  const groups = useMemo(
+    () => groupThreadItems(thread?.items ?? [], regenMap),
+    [thread?.items, regenMap],
+  );
+
   const seedAttachments = useMemo(() => {
     void dismissTick;
     if (!tool || tool.attachments.max === 0) return [];
+
+    if (toolId === 'video') {
+      if (continueFrame) return [continueFrame];
+      if (initialBaseAssetId) {
+        return [
+          {
+            key: `start-${initialBaseAssetId}`,
+            assetId: initialBaseAssetId,
+            previewUrl: assetUrl(initialBaseAssetId, { thumb: true }),
+            uploading: false,
+          },
+        ];
+      }
+      return [];
+    }
+
     if (editOverride) return [editOverride, ...extraRefs];
     if (initialBaseAssetId) {
       return [
@@ -75,15 +111,13 @@ export function ThreadView({
         ...extraRefs,
       ];
     }
-    const threadId = thread?.thread.id;
-    const lastDone = [...(thread?.items ?? [])]
+    const tid = thread?.thread.id;
+    // Prefer the latest kept version of the latest card (regen stays in place).
+    const lastDone = [...groups]
       .reverse()
-      .find((i) => i.job.status === 'done' && i.assets[0]);
-    if (
-      threadId &&
-      lastDone?.assets[0] &&
-      !isWorkingDismissed(threadId)
-    ) {
+      .map((g) => keptVersions(g.versions).at(-1))
+      .find((i) => i && i.assets[0]);
+    if (tid && lastDone?.assets[0] && !isWorkingDismissed(tid)) {
       const id = lastDone.assets[0].id;
       return [
         {
@@ -97,28 +131,40 @@ export function ThreadView({
       ];
     }
     return extraRefs;
-  }, [tool, thread, editOverride, extraRefs, initialBaseAssetId, dismissTick]);
+  }, [
+    tool,
+    toolId,
+    thread,
+    groups,
+    editOverride,
+    extraRefs,
+    initialBaseAssetId,
+    continueFrame,
+    dismissTick,
+  ]);
 
-  const items = thread?.items ?? [];
   const daySections = useMemo(() => {
-    const list = thread?.items ?? [];
-    const sections: { key: string; label: string; indexes: number[] }[] = [];
-    for (let i = 0; i < list.length; i++) {
-      const item = list[i]!;
-      const key = localDayKey(item.job.timings.queuedAt);
+    const sections: {
+      key: string;
+      label: string;
+      groupIndexes: number[];
+    }[] = [];
+    for (let i = 0; i < groups.length; i++) {
+      const root = groups[i]!.versions[0]!;
+      const key = localDayKey(root.job.timings.queuedAt);
       const last = sections[sections.length - 1];
       if (last && last.key === key) {
-        last.indexes.push(i);
+        last.groupIndexes.push(i);
       } else {
         sections.push({
           key,
-          label: formatThreadDay(item.job.timings.queuedAt),
-          indexes: [i],
+          label: formatThreadDay(root.job.timings.queuedAt),
+          groupIndexes: [i],
         });
       }
     }
     return sections;
-  }, [thread?.items]);
+  }, [groups]);
 
   if (!tool) {
     return (
@@ -129,9 +175,13 @@ export function ThreadView({
     );
   }
 
-  const isNew = !thread || items.length === 0;
+  const isNew = !thread || groups.length === 0;
   const quota = capabilities.limits[toolId];
-  const busy = submitting || createGen.isPending || createThread.isPending;
+  const busy =
+    submitting ||
+    createGen.isPending ||
+    createThread.isPending ||
+    extractFrame.isPending;
   const maxAttach = tool.attachments.max;
 
   const submit = async (data: ComposerSubmit) => {
@@ -139,7 +189,7 @@ export function ThreadView({
     try {
       let threadId = thread?.thread.id;
       if (!threadId) {
-        const created = await createThread.mutateAsync(undefined);
+        const created = await createThread.mutateAsync({ tool: toolId });
         threadId = created.thread.id;
         router.replace(`/create/?tool=${toolId}&thread=${threadId}`);
       }
@@ -155,6 +205,7 @@ export function ThreadView({
       });
       setEditOverride(null);
       setExtraRefs([]);
+      setContinueFrame(null);
       setDraftPrompt('');
     } catch (err) {
       toastApiError(err);
@@ -163,8 +214,10 @@ export function ThreadView({
     }
   };
 
+  // Include toolId so switching image↔video remounts and does not leak
+  // video controls (quality/duration) into image jobs (instant ENGINE_FAILED).
   const composerKey =
-    `${seedAttachments.map((i) => i.key).join('|') || 'empty'}-d${draftTick}`;
+    `${toolId}-${seedAttachments.map((i) => i.key).join('|') || 'empty'}-d${draftTick}`;
   const composer = (
     <Composer
       key={composerKey}
@@ -187,7 +240,7 @@ export function ThreadView({
   const deleteDialog = (
     <ConfirmDialog
       open={Boolean(deleteId)}
-      title="Delete this image?"
+      title={toolId === 'video' ? 'Delete this video?' : 'Delete this image?'}
       description="This cannot be undone."
       confirmLabel="Delete"
       danger
@@ -201,71 +254,87 @@ export function ThreadView({
     />
   );
 
-  const cards = daySections.map((section) => (
-    <section key={section.key} className="flex w-full flex-col gap-6">
-      <p className="text-center text-xs text-muted-foreground">{section.label}</p>
-      {section.indexes.map((i) => {
-        const item = items[i]!;
-        return (
-          <GenerationCard
-            key={item.job.id}
-            job={item.job}
-            assets={item.assets}
-            canAddReference={extraRefs.length + 1 < maxAttach}
-            onCancel={() => cancel.mutate(item.job.id)}
-            onRegenerate={() => {
-              const threadId = thread?.thread.id;
-              if (!threadId) return;
-              void createGen
-                .mutateAsync({
-                  threadId,
-                  input: {
-                    tool: toolId,
-                    prompt: item.job.prompt,
-                    values: item.job.params,
-                    variant: item.job.variant,
-                    inputAssetIds: item.job.inputAssetIds,
-                  },
-                })
-                .catch(toastApiError);
-            }}
-            onEdit={(assetId) => {
-              const threadId = thread?.thread.id;
-              if (threadId) setWorkingDismissed(threadId, false);
-              setEditOverride({
-                key: `working-${assetId}`,
-                assetId,
-                previewUrl: assetUrl(assetId, { thumb: true }),
-                uploading: false,
-                working: true,
-              });
-              setExtraRefs([]);
-            }}
-            onEditPrompt={() => {
-              setDraftPrompt(item.job.prompt);
-              setDraftTick((n) => n + 1);
-            }}
-            onAddReference={(assetId) => {
-              setExtraRefs((prev) => {
-                if (prev.some((p) => p.assetId === assetId)) return prev;
-                if (prev.length + 1 >= maxAttach) return prev;
-                return [
-                  ...prev,
-                  {
-                    key: `ref-${assetId}`,
-                    assetId,
-                    previewUrl: assetUrl(assetId, { thumb: true }),
-                    uploading: false,
-                  },
-                ];
-              });
-            }}
-            onDelete={setDeleteId}
-          />
-        );
-      })}
-    </section>
-  ));
+  const bumpDraft = (prompt: string) => {
+    setDraftPrompt(prompt);
+    setDraftTick((n) => n + 1);
+  };
+
+  const regenerate = (group: VersionGroup) => {
+    const tid = thread?.thread.id;
+    if (!tid) return;
+    // Block only while queued/running — failed/cancelled must allow Try again.
+    if (activeAttempt(group.versions)) return;
+    const root = group.versions[0]!;
+    const fromId = group.versions[group.versions.length - 1]!.job.id;
+    void createGen
+      .mutateAsync({
+        threadId: tid,
+        input: {
+          tool: toolId,
+          prompt: root.job.prompt,
+          values: root.job.params,
+          variant: root.job.variant,
+          inputAssetIds: root.job.inputAssetIds,
+        },
+        onCreated: (data) => {
+          linkRegenJob(data.job.id, fromId);
+        },
+      })
+      .catch(toastApiError);
+  };
+
+  const cards = (
+    <ThreadCards
+      toolId={toolId}
+      groups={groups}
+      daySections={daySections}
+      maxAttach={maxAttach}
+      extraRefs={extraRefs}
+      onCancel={(jobId) => cancel.mutate(jobId)}
+      onRegenerate={regenerate}
+      onContinueFrame={(att) => {
+        setContinueFrame(att);
+        setDraftTick((n) => n + 1);
+      }}
+      onEditPrompt={bumpDraft}
+      onEdit={(assetId) => {
+        const tid = thread?.thread.id;
+        if (tid) setWorkingDismissed(tid, false);
+        setEditOverride({
+          key: `working-${assetId}`,
+          assetId,
+          previewUrl: assetUrl(assetId, { thumb: true }),
+          uploading: false,
+          working: true,
+        });
+        setExtraRefs([]);
+      }}
+      onAddReference={(assetId) => {
+        setExtraRefs((prev) => {
+          if (prev.some((p) => p.assetId === assetId)) return prev;
+          if (prev.length + 1 >= maxAttach) return prev;
+          return [
+            ...prev,
+            {
+              key: `ref-${assetId}`,
+              assetId,
+              previewUrl: assetUrl(assetId, { thumb: true }),
+              uploading: false,
+            },
+          ];
+        });
+      }}
+      onAnimate={(assetId) => {
+        router.push(`/create/?tool=video&base=${assetId}`);
+      }}
+      onDelete={setDeleteId}
+      extractFrame={(id, at) =>
+        extractFrame.mutateAsync({ assetId: id, at })
+      }
+      onError={toastApiError}
+      onContinueToast={() => toast.success('Last frame added as Start frame')}
+    />
+  );
 
   if (isNew) {
     return (
@@ -273,10 +342,7 @@ export function ThreadView({
         <div className="min-h-6 flex-1" aria-hidden />
         <EmptyHero
           name={userName}
-          onPickIdea={(idea) => {
-            setDraftPrompt(idea);
-            setDraftTick((n) => n + 1);
-          }}
+          onPickIdea={(idea) => bumpDraft(idea)}
         />
         <div className="w-full min-w-0 max-w-4xl">{composer}</div>
         <div className="min-h-6 flex-1" aria-hidden />

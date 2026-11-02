@@ -2,14 +2,18 @@ import { z } from 'zod';
 import { assetSchema } from './asset.js';
 import { userJobSchema } from './job.js';
 
+export const threadToolSchema = z.enum(['image', 'video']);
+
 export const threadSchema = z.object({
   id: z.string().min(1),
+  tool: threadToolSchema,
   title: z.string(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
 export const createThreadRequestSchema = z.object({
+  tool: threadToolSchema,
   title: z.string().trim().max(120).optional(),
 });
 
@@ -18,6 +22,7 @@ export const createThreadResponseSchema = z.object({
 });
 
 export const threadListQuerySchema = z.object({
+  tool: threadToolSchema.optional(),
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().positive().max(50).default(20),
 });

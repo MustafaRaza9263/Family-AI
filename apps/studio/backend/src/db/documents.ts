@@ -24,9 +24,13 @@ export type SessionDocument = {
   expiresAt: Date;
 };
 
+export type ThreadTool = 'image' | 'video';
+
 export type ThreadDocument = {
   _id: ObjectId;
   userId: ObjectId;
+  /** Absent on legacy rows — treat as 'image'. */
+  tool?: ThreadTool;
   title: string;
   createdAt: Date;
   updatedAt: Date;
@@ -68,7 +72,7 @@ export type JobDocument = {
 };
 
 export type AssetKind = 'image' | 'video';
-export type AssetSource = 'upload' | 'generated';
+export type AssetSource = 'upload' | 'generated' | 'derived';
 
 export type AssetDocument = {
   _id: ObjectId;

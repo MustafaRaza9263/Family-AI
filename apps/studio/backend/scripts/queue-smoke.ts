@@ -65,12 +65,14 @@ async function main(): Promise<void> {
 
   const threadA = await threads.create({
     userId: userA.id,
+    tool: 'image',
     title: 'smoke A',
     createdAt: clock.now(),
     updatedAt: clock.now(),
   });
   const threadB = await threads.create({
     userId: userB.id,
+    tool: 'image',
     title: 'smoke B',
     createdAt: clock.now(),
     updatedAt: clock.now(),

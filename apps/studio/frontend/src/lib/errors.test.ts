@@ -1,19 +1,18 @@
+import { apiErrorCodeSchema } from '@studio/shared';
 import { describe, expect, it } from 'vitest';
 import { ERROR_COPY, errorMessage } from './errors';
 
-const REQUIRED = [
-  'QUOTA_DAILY',
-  'QUOTA_ACTIVE',
-  'QUEUE_FULL',
-  'UNSUPPORTED_COMBINATION',
+const JOB_CODES = [
   'ENGINE_TIMEOUT',
   'ENGINE_FAILED',
   'ENGINE_BAD_OUTPUT',
   'ENGINE_UNAVAILABLE',
   'ENGINE_CANCELLED',
-  'INVALID_INPUT',
-  'UPLOAD_TOO_LARGE',
-  'UPLOAD_INVALID',
+] as const;
+
+const REQUIRED = [
+  ...apiErrorCodeSchema.options,
+  ...JOB_CODES,
 ] as const;
 
 describe('ERROR_COPY', () => {

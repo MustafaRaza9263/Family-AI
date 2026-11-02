@@ -31,9 +31,14 @@ import { CapabilitiesService } from './services/capabilities.service.js';
 import { ThreadService } from './services/thread.service.js';
 import { GenerationQueryService } from './services/generation-query.service.js';
 import { FilesService } from './services/files.service.js';
+import { FrameService } from './services/frame.service.js';
 import { LibraryService } from './services/library.service.js';
 import { UploadService } from './services/upload.service.js';
 import { AdminStudioService } from './services/admin-studio.service.js';
+import {
+  assertMediaBinariesForRecipes,
+  createFfmpegMedia,
+} from './media/index.js';
 import type { StudioApiServices } from './app.js';
 import {
   createTelemetry,
@@ -113,6 +118,16 @@ export async function compose(
     },
   });
 
+  await assertMediaBinariesForRecipes(
+    comfy.recipes,
+    env.FFMPEG_PATH,
+    env.FFPROBE_PATH,
+  );
+  const media = createFfmpegMedia({
+    ffmpegPath: env.FFMPEG_PATH,
+    ffprobePath: env.FFPROBE_PATH,
+  });
+
   const limits = new LimitsService({
     usage,
     jobs,
@@ -129,6 +144,7 @@ export async function compose(
     limits,
     hub,
     telemetry,
+    media,
     clock,
     logger,
     dataDir: env.DATA_DIR,
@@ -177,6 +193,12 @@ export async function compose(
     logger,
     dataDir: env.DATA_DIR,
   });
+  const frames = new FrameService({
+    assets,
+    media,
+    dataDir: env.DATA_DIR,
+    clock,
+  });
   const library = new LibraryService(assets, favorites, clock);
   const uploads = new UploadService({
     assets,
@@ -197,6 +219,7 @@ export async function compose(
     threads: threadService,
     generations: generationQuery,
     files,
+    frames,
     library,
     uploads,
     adminStudio,

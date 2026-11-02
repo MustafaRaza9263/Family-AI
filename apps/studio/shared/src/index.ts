@@ -87,11 +87,13 @@ export {
 
 export {
   assetKindSchema,
+  assetSourceSchema,
   assetSchema,
   type AssetDto,
 } from './schemas/asset.js';
 
 export {
+  threadToolSchema,
   threadSchema,
   createThreadRequestSchema,
   createThreadResponseSchema,

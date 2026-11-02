@@ -7,7 +7,10 @@ import { toUserJob } from '../mappers/job.js';
 import { toThreadDto } from '../mappers/thread.js';
 import type { AssetRepository } from '../db/repositories/asset-repository.js';
 import type { JobRepository } from '../db/repositories/job-repository.js';
-import type { ThreadRepository } from '../db/repositories/thread-repository.js';
+import type {
+  ThreadRepository,
+  ThreadTool,
+} from '../db/repositories/thread-repository.js';
 import type { Logger } from '../lib/logger.js';
 
 export type ThreadServiceDeps = {
@@ -21,10 +24,11 @@ export type ThreadServiceDeps = {
 export class ThreadService {
   constructor(private readonly deps: ThreadServiceDeps) {}
 
-  async create(userId: string, title?: string) {
+  async create(userId: string, tool: ThreadTool, title?: string) {
     const now = this.deps.clock.now();
     const thread = await this.deps.threads.create({
       userId,
+      tool,
       title: title?.trim() ?? '',
       createdAt: now,
       updatedAt: now,
@@ -32,13 +36,19 @@ export class ThreadService {
     return { thread: toThreadDto(thread) };
   }
 
-  async list(userId: string, cursor: string | undefined, limit: number) {
+  async list(
+    userId: string,
+    cursor: string | undefined,
+    limit: number,
+    tool?: ThreadTool,
+  ) {
     const before = cursor ? decodeCursor(cursor) : null;
     if (cursor && !before) {
       throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid cursor');
     }
     const rows = await this.deps.threads.listForUser({
       userId,
+      tool,
       limit: limit + 1,
       before: before
         ? { updatedAt: before.at, id: before.id }

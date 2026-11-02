@@ -13,6 +13,7 @@ export class MemoryThreadRepository implements ThreadRepository {
     const record: ThreadRecord = {
       id: randomUUID(),
       userId: input.userId,
+      tool: input.tool,
       title: input.title,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
@@ -40,6 +41,7 @@ export class MemoryThreadRepository implements ThreadRepository {
     let rows = [...this.threads.values()].filter(
       (t) => t.userId === opts.userId && !t.deletedAt,
     );
+    if (opts.tool) rows = rows.filter((t) => t.tool === opts.tool);
     rows.sort((a, b) => {
       const dt = b.updatedAt.getTime() - a.updatedAt.getTime();
       if (dt !== 0) return dt;

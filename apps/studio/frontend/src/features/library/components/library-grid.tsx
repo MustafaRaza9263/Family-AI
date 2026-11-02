@@ -1,7 +1,7 @@
 'use client';
 
 import type { AssetDto } from '@studio/shared';
-import { Check, Heart, Pencil, Trash2 } from 'lucide-react';
+import { Check, Clapperboard, Heart, Pencil, Trash2 } from 'lucide-react';
 import {
   useEffect,
   useRef,
@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatDurationBadge } from '@/features/create/format-duration';
 import { cn } from '@/lib/cn';
 import { assetUrl } from '@/lib/files';
 
@@ -98,6 +99,7 @@ function LibraryTile({
   selectionActive,
   onOpen,
   onEdit,
+  onUseAsStart,
   onDelete,
   onToggleSelect,
   onToggleFavorite,
@@ -107,6 +109,7 @@ function LibraryTile({
   selectionActive: boolean;
   onOpen: (asset: AssetDto) => void;
   onEdit: (asset: AssetDto) => void;
+  onUseAsStart: (asset: AssetDto) => void;
   onDelete: (asset: AssetDto) => void;
   onToggleSelect: (asset: AssetDto) => void;
   onToggleFavorite: (asset: AssetDto) => void;
@@ -114,6 +117,7 @@ function LibraryTile({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressedRef = useRef(false);
   const selectable = asset.kind === 'image';
+  const duration = formatDurationBadge(asset.durationSec);
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -172,16 +176,31 @@ function LibraryTile({
         className="absolute inset-0 block size-full border-0 bg-transparent p-0"
         aria-label="View"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={assetUrl(asset.id, { thumb: true })}
-          alt=""
-          width={asset.width}
-          height={asset.height}
-          className="block size-full object-cover"
-          loading="lazy"
-          draggable={false}
-        />
+        {asset.kind === 'video' ? (
+          <video
+            src={assetUrl(asset.id)}
+            poster={assetUrl(asset.id, { thumb: true })}
+            width={asset.width}
+            height={asset.height}
+            className="pointer-events-none block size-full object-cover"
+            muted
+            loop
+            playsInline
+            autoPlay
+            preload="metadata"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={assetUrl(asset.id, { thumb: true })}
+            alt=""
+            width={asset.width}
+            height={asset.height}
+            className="block size-full object-cover"
+            loading="lazy"
+            draggable={false}
+          />
+        )}
       </button>
 
       {selectable ? (
@@ -212,7 +231,17 @@ function LibraryTile({
           >
             <Pencil className="size-4" strokeWidth={2} />
           </OverlayIcon>
-        ) : null}
+        ) : (
+          <OverlayIcon
+            label="Use as Start frame"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUseAsStart(asset);
+            }}
+          >
+            <Clapperboard className="size-4" strokeWidth={2} />
+          </OverlayIcon>
+        )}
         <OverlayIcon
           label="Delete"
           danger
@@ -224,6 +253,18 @@ function LibraryTile({
           <Trash2 className="size-4" strokeWidth={2} />
         </OverlayIcon>
       </div>
+
+      {duration ? (
+        <span
+          className={cn(
+            'pointer-events-none absolute bottom-2.5 left-2.5 z-10',
+            'rounded-md bg-black/65 px-1.5 py-0.5',
+            'font-mono text-[11px] font-medium text-white',
+          )}
+        >
+          {duration}
+        </span>
+      ) : null}
 
       <button
         type="button"
@@ -269,6 +310,7 @@ export function LibraryGrid({
   onLoadMore,
   onOpen,
   onEdit,
+  onUseAsStart,
   onDelete,
   onToggleSelect,
   onToggleFavorite,
@@ -280,6 +322,7 @@ export function LibraryGrid({
   onLoadMore: () => void;
   onOpen: (asset: AssetDto) => void;
   onEdit: (asset: AssetDto) => void;
+  onUseAsStart: (asset: AssetDto) => void;
   onDelete: (asset: AssetDto) => void;
   onToggleSelect: (asset: AssetDto) => void;
   onToggleFavorite: (asset: AssetDto) => void;
@@ -308,6 +351,7 @@ export function LibraryGrid({
             selectionActive={selectionActive}
             onOpen={onOpen}
             onEdit={onEdit}
+            onUseAsStart={onUseAsStart}
             onDelete={onDelete}
             onToggleSelect={onToggleSelect}
             onToggleFavorite={onToggleFavorite}

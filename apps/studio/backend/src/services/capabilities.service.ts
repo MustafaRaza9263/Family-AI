@@ -62,10 +62,20 @@ function buildTools(
     if (!list || list.length === 0) continue;
     const modes = list.map(toPublicMode);
     const maxAttach = Math.max(...modes.map((m) => m.inputImages.max), 0);
+    const richest = modes.reduce<(typeof modes)[number] | undefined>(
+      (best, mode) =>
+        !best || (mode.slots?.length ?? 0) > (best.slots?.length ?? 0)
+          ? mode
+          : best,
+      undefined,
+    );
     tools.push({
       id: tool,
       label: TOOL_LABELS[tool],
-      attachments: { max: maxAttach },
+      attachments: {
+        max: maxAttach,
+        slots: richest?.slots,
+      },
       modes,
     });
   }
@@ -73,7 +83,7 @@ function buildTools(
 }
 
 function toPublicMode(recipe: Recipe): ToolMode {
-  const { match, params } = recipe.manifest;
+  const { match, params, images } = recipe.manifest;
   const controls: ModeControl[] = Object.entries(params).map(([id, param]) => {
     if (param.type === 'text') {
       return {
@@ -101,10 +111,15 @@ function toPublicMode(recipe: Recipe): ToolMode {
     };
   });
 
+  const slots = (images ?? [])
+    .map((slot) => (slot.label ? { label: slot.label } : null))
+    .filter((s): s is { label: string } => s !== null);
+
   return {
     inputImages: { ...match.inputImages },
     label: match.label,
     placeholder: match.placeholder,
+    slots: slots.length > 0 ? slots : undefined,
     variant: match.variant
       ? {
           id: match.variant.id,

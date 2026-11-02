@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     throw new Error(`unexpected product ${capsBody.product}`);
   }
 
-  const thread = await api(jar, 'POST', '/api/threads', {});
+  const thread = await api(jar, 'POST', '/api/threads', { tool: 'image' });
   if (thread.status !== 201) {
     throw new Error(`create thread failed: ${thread.status}`);
   }

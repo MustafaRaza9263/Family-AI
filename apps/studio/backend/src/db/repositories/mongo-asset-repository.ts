@@ -98,7 +98,9 @@ export class MongoAssetRepository implements AssetRepository {
       deletedAt: { $exists: false },
     };
     if (opts.kind) filter.kind = opts.kind;
+    // Derived frames are Continue helpers, never library tiles.
     if (opts.source) filter.source = opts.source;
+    else filter.source = { $ne: 'derived' };
     if (opts.assetIds) {
       const ids = opts.assetIds
         .filter((id) => ObjectId.isValid(id))
@@ -132,6 +134,31 @@ export class MongoAssetRepository implements AssetRepository {
     await this.assets.updateOne(
       { _id: new ObjectId(id) },
       { $set: { filePath, thumbPath } },
+    );
+  }
+
+  async updateMediaMeta(
+    id: string,
+    meta: {
+      width: number;
+      height: number;
+      bytes: number;
+      durationSec?: number;
+    },
+  ): Promise<void> {
+    if (!ObjectId.isValid(id)) return;
+    await this.assets.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          width: meta.width,
+          height: meta.height,
+          bytes: meta.bytes,
+          ...(meta.durationSec !== undefined
+            ? { durationSec: meta.durationSec }
+            : {}),
+        },
+      },
     );
   }
 

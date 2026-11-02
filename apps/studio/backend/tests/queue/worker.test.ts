@@ -72,6 +72,14 @@ describe('queue worker', () => {
       limits,
       hub,
       telemetry,
+      media: {
+        async probeVideo() {
+          return { width: 64, height: 64, frames: 12, durationSec: 0.5 };
+        },
+        async extractFrame() {
+          return Buffer.from('png');
+        },
+      },
       clock,
       logger: silentLogger(),
       dataDir,
@@ -216,6 +224,8 @@ describe('queue worker', () => {
     ctx.comfy.history.set('p-done', {
       outputs: [Buffer.from('png')],
       files: [{ filename: 'a.png', subfolder: '', type: 'output' }],
+      extension: 'png',
+      kind: 'image',
     });
 
     const heldJob = await ctx.jobs.create({
@@ -254,6 +264,14 @@ describe('queue worker', () => {
       jobs: ctx.jobs,
       assets: ctx.assets,
       limits: ctx.limits,
+      media: {
+        async probeVideo() {
+          return { width: 64, height: 64, frames: 12, durationSec: 0.5 };
+        },
+        async extractFrame() {
+          return Buffer.from('png');
+        },
+      },
       hub: ctx.hub,
       clock: ctx.clock,
       logger: silentLogger(),
