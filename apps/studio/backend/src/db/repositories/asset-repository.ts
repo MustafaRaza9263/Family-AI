@@ -40,6 +40,8 @@ export type ListLibraryOpts = {
   userId: string;
   kind?: AssetKind;
   source?: AssetSource;
+  /** When set, only these asset ids (favorites filter). */
+  assetIds?: string[];
   limit: number;
   before?: { createdAt: Date; id: string };
 };

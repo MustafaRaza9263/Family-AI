@@ -296,6 +296,7 @@ Shared Zod discriminated union (`shared/src/schemas/events.ts`, reused by the fu
 - `threads`: userId, title, createdAt, updatedAt, deletedAt?.
 - `jobs`: userId, threadId, tool (`image`\|`video`), recipeId, variant?, status `queued`\|`running`\|`done`\|`failed`\|`cancelled`, prompt, params (validated user-facing values), inputAssetIds, outputAssetIds, parentAssetId?, comfyPromptId?, errorCode?, attempts, timings `{ queuedAt, startedAt?, finishedAt? }`. Indexes: `{ status, tool, timings.queuedAt }`, `{ userId, status }`, `{ threadId }`.
 - `assets`: userId, threadId?, jobId?, kind `image`\|`video`, filePath, thumbPath, mime, bytes, width, height, durationSec?, source `upload`\|`generated`, parentAssetId?, createdAt, deletedAt?.
+- `asset_favorites`: userId, assetId, createdAt. Unique `{ userId, assetId }` — per-user library favorites (heart).
 - `usage_daily`: userId, day (`YYYY-MM-DD` in `STUDIO_TIMEZONE`), tool, runs, gpuSeconds. Unique index `{ userId, day, tool }`.
 - `audit_logs`: admin actions (e.g. admin viewing another user’s non-thumb asset via `GET /files/:id`).
 - `settings`: singleton document `{ enginePaused, limits }` (dailyRuns / perUserRunning / perUserQueued / globalQueued overrides).
@@ -314,7 +315,7 @@ Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), 
 | Uploads | `POST /uploads` (multipart `file`; jpeg/png/webp ≤10 MB; sanitize + PNG; rate 30/min/user) |
 | Live | `GET /events` (SSE; event shapes in `@studio/shared`) |
 | Files | `GET /files/:assetId` (`?thumb=1`, `?download=1`; `Cache-Control: private, immutable`; path from DB only) · `DELETE /assets/:id` (owner or admin) |
-| Library | `GET /library?kind=image\|video&source=generated\|upload&cursor&limit` (own, not deleted; **default source `generated`**) |
+| Library | `GET /library?kind=image\|video&source=generated\|upload&favorited=true\|false&cursor&limit` (own, not deleted; **default source `generated`**; `favorited=true` filters to favorites) · `POST /assets/:id/favorite` (toggle; `{ favorited }`) |
 | Admin | `GET/PATCH /admin/users` · `GET /admin/jobs` · `GET /admin/runs` · `GET /admin/runs/:jobId` · `GET/PATCH /admin/engine` · `GET/PATCH /admin/settings` |
 
 Production static serve: `apps/studio/frontend/out` via `mountFrontendStatic` (trailingSlash page fallbacks, no SPA catch-all over `/api`, CSP as in §8.10 / helmet).
@@ -332,7 +333,7 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.10 UI
 
-- Screens: Login · Request account (with a pending-approval state) · Home (greeting, composer, recent) · Create image (thread) · Create video (thread; when recipes exist) · Library / My Generations (All / Images / Videos; download, delete, **Use as base**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
+- Screens: Login · Request account (with a pending-approval state) · Home (greeting, composer, recent) · Create image (thread) · Create video (thread; when recipes exist) · Library / My Generations (All / Images / Videos; Favorites chip; heart on each tile; download, delete, **Use as base**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
 - **Composer (mode-driven, no per-recipe UI code):** single shell — attachments (when any) + autosize prompt + toolbar. Attachment count + optional variant → `pickMode` → mode chip beside thumbs, placeholder, and only that mode's controls. Toolbar: attach (+), fan-out aspect pill, Fast/Best quality pill (hidden/disabled with images), quota meta, circular send (Enter submits). Sources = device upload, drag-and-drop, paste, (library picker can use `source=upload|generated`). Client type/size checks for fast feedback; server is authority. Working image is the first attachment (section 8.3). Generation cards: "Based on" strip from `inputAssetIds`; actions Edit / Add as reference (disabled at limit) / Download / Regenerate (keeps prompt, values, variant, **and** `inputAssetIds`) / Copy prompt / Delete. Every mode costs one run.
 - The mockup's separate per-tool pages collapse into the two thread composers above. Removed from the mockup: the model dropdown and "Model" field, Google/SSO login, the Audio to Audio tile (until a recipe exists), "approval email" copy.
 - Stack: Next.js static export (`output: 'export'`, `trailingSlash`, one `/create/` page reading `?tool=` and optional `?base=` / `?thread=`) · Tailwind v4 · Radix (`radix-ui`) · Motion · lucide · TanStack Query · react-hook-form + Zod · `next-themes` (light/dark/system, no flash) · `sonner` toasts · self-hosted Inter Variable. No external assets; strict CSP.
@@ -405,8 +406,8 @@ apps/studio/
 │   │   │                  rate-limits (incl. uploads 30/min) · request-logger
 │   │   │                  error-handler · not-found · frontend-static
 │   │   ├── db/            mongo.ts · indexes.ts · documents.ts
-│   │   │   └── repositories/  user · session · thread · job · asset · usage-daily
-│   │   │                      settings · audit · mongo-* counterparts
+│   │   │   └── repositories/  user · session · thread · job · asset · favorite
+│   │   │                      usage-daily · settings · audit · mongo-* counterparts
 │   │   ├── lib/           logger · clock · errors · password · session-token
 │   │   │                  public-user · escape-regex · cursor · title-from-prompt
 │   │   ├── types/express.d.ts

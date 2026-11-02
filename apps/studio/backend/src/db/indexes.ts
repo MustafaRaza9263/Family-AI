@@ -35,6 +35,18 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { key: { deletedAt: 1, createdAt: 1 }, name: 'assets_deletedAt_createdAt' },
   ]);
 
+  await db.collection('asset_favorites').createIndexes([
+    {
+      key: { userId: 1, assetId: 1 },
+      unique: true,
+      name: 'asset_favorites_userId_assetId_unique',
+    },
+    {
+      key: { userId: 1, createdAt: -1 },
+      name: 'asset_favorites_userId_createdAt',
+    },
+  ]);
+
   await db.collection('usage_daily').createIndexes([
     {
       key: { userId: 1, day: 1, tool: 1 },

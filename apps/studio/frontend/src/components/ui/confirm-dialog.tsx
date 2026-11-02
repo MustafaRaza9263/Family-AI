@@ -9,6 +9,8 @@ type ConfirmDialogProps = {
   title: string;
   description: string;
   confirmLabel: string;
+  /** Dismiss button label. Defaults to "Cancel". */
+  cancelLabel?: string;
   loading?: boolean;
   danger?: boolean;
   onConfirm: () => void;
@@ -20,6 +22,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel = 'Cancel',
   loading,
   danger,
   onConfirm,
@@ -42,7 +45,7 @@ export function ConfirmDialog({
               onClick={() => onOpenChange(false)}
               disabled={loading}
             >
-              Cancel
+              {cancelLabel}
             </Button>
             <Button
               type="button"

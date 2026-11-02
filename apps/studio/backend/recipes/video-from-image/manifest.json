@@ -1,0 +1,243 @@
+{
+  "id": "video-from-image",
+  "tool": "video",
+  "timeoutSeconds": 900,
+  "match": {
+    "tool": "video",
+    "inputImages": {
+      "min": 1,
+      "max": 1
+    },
+    "label": "Animate",
+    "placeholder": "Describe how the image comes alive"
+  },
+  "params": {
+    "prompt": {
+      "type": "text",
+      "label": "Prompt",
+      "group": "primary",
+      "maxLength": 1000,
+      "target": {
+        "title": "IN_PROMPT",
+        "fields": [
+          "value"
+        ]
+      }
+    },
+    "aspectRatio": {
+      "type": "enum",
+      "label": "Aspect ratio",
+      "icon": "ratio",
+      "group": "primary",
+      "default": "16:9",
+      "options": [
+        {
+          "value": "1:1",
+          "label": "Square",
+          "icon": "square"
+        },
+        {
+          "value": "4:5",
+          "label": "Portrait",
+          "icon": "rectangle-vertical"
+        },
+        {
+          "value": "16:9",
+          "label": "Landscape",
+          "icon": "rectangle-horizontal"
+        },
+        {
+          "value": "9:16",
+          "label": "Story",
+          "icon": "smartphone"
+        }
+      ]
+    },
+    "quality": {
+      "type": "enum",
+      "label": "Quality",
+      "icon": "gauge",
+      "group": "primary",
+      "default": "standard",
+      "options": [
+        {
+          "value": "standard",
+          "label": "Standard",
+          "icon": "gauge"
+        },
+        {
+          "value": "hd",
+          "label": "HD",
+          "icon": "sparkles"
+        }
+      ]
+    },
+    "duration": {
+      "type": "enum",
+      "label": "Duration",
+      "icon": "clock",
+      "group": "primary",
+      "default": "5",
+      "options": [
+        {
+          "value": "5",
+          "label": "5 s",
+          "writes": [
+            {
+              "title": "IN_DURATION",
+              "field": "value",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "value": "8",
+          "label": "8 s",
+          "writes": [
+            {
+              "title": "IN_DURATION",
+              "field": "value",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "value": "10",
+          "label": "10 s",
+          "writes": [
+            {
+              "title": "IN_DURATION",
+              "field": "value",
+              "value": 10
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "derived": [
+    {
+      "from": [
+        "aspectRatio",
+        "quality"
+      ],
+      "table": {
+        "1:1|standard": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 768
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 768
+          }
+        ],
+        "1:1|hd": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 1024
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 1024
+          }
+        ],
+        "4:5|standard": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 640
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 832
+          }
+        ],
+        "4:5|hd": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 832
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 1024
+          }
+        ],
+        "16:9|standard": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 1024
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 576
+          }
+        ],
+        "16:9|hd": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 1408
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 768
+          }
+        ],
+        "9:16|standard": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 576
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 1024
+          }
+        ],
+        "9:16|hd": [
+          {
+            "title": "IN_WIDTH",
+            "field": "value",
+            "value": 768
+          },
+          {
+            "title": "IN_HEIGHT",
+            "field": "value",
+            "value": 1408
+          }
+        ]
+      }
+    }
+  ],
+  "seed": {
+    "target": {
+      "title": "IN_SAMPLER",
+      "fields": [
+        "noise_seed"
+      ]
+    }
+  },
+  "output": {
+    "title": "OUT_VIDEO",
+    "prefixField": "filename_prefix"
+  },
+  "images": [
+    {
+      "title": "IN_IMAGE_1",
+      "field": "image",
+      "label": "Start frame"
+    }
+  ]
+}

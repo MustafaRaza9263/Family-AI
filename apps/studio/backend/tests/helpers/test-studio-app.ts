@@ -18,6 +18,7 @@ import { MemorySessionRepository } from '../fakes/memory-session-repository.js';
 import { MemoryThreadRepository } from '../fakes/memory-thread-repository.js';
 import { MemoryJobRepository } from '../fakes/memory-job-repository.js';
 import { MemoryAssetRepository } from '../fakes/memory-asset-repository.js';
+import { MemoryFavoriteRepository } from '../fakes/memory-favorite-repository.js';
 import { MemoryUsageDailyRepository } from '../fakes/memory-usage-daily-repository.js';
 import { MemorySettingsRepository } from '../fakes/memory-settings-repository.js';
 import { MemoryAuditRepository } from '../fakes/memory-audit-repository.js';
@@ -146,7 +147,11 @@ export async function buildStudioTestApp(
       logger,
       dataDir: env.DATA_DIR,
     }),
-    library: new LibraryService(assets),
+    library: new LibraryService(
+      assets,
+      new MemoryFavoriteRepository(),
+      clock as Clock,
+    ),
     uploads: new UploadService({
       assets,
       dataDir: env.DATA_DIR,

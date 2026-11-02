@@ -107,8 +107,10 @@ export {
 export {
   libraryQuerySchema,
   libraryPageSchema,
+  favoriteToggleResponseSchema,
   type LibraryQuery,
   type LibraryPage,
+  type FavoriteToggleResponse,
 } from './schemas/library.js';
 
 export {

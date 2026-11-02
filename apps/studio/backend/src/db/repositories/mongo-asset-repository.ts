@@ -92,12 +92,20 @@ export class MongoAssetRepository implements AssetRepository {
 
   async listLibrary(opts: ListLibraryOpts): Promise<AssetRecord[]> {
     if (!ObjectId.isValid(opts.userId)) return [];
+    if (opts.assetIds && opts.assetIds.length === 0) return [];
     const filter: Record<string, unknown> = {
       userId: new ObjectId(opts.userId),
       deletedAt: { $exists: false },
     };
     if (opts.kind) filter.kind = opts.kind;
     if (opts.source) filter.source = opts.source;
+    if (opts.assetIds) {
+      const ids = opts.assetIds
+        .filter((id) => ObjectId.isValid(id))
+        .map((id) => new ObjectId(id));
+      if (ids.length === 0) return [];
+      filter._id = { $in: ids };
+    }
     if (opts.before && ObjectId.isValid(opts.before.id)) {
       filter.$or = [
         { createdAt: { $lt: opts.before.createdAt } },

@@ -89,6 +89,14 @@ export type AssetDocument = {
   deletedAt?: Date;
 };
 
+/** Per-user favorite edge for a library asset. */
+export type AssetFavoriteDocument = {
+  _id: ObjectId;
+  userId: ObjectId;
+  assetId: ObjectId;
+  createdAt: Date;
+};
+
 export type UsageDailyDocument = {
   _id: ObjectId;
   userId: ObjectId;

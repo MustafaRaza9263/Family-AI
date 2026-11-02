@@ -52,7 +52,7 @@ export function GenerationCard({
     enabled: job.status === 'queued' || job.status === 'running',
   });
 
-  const [open, setOpen] = useState(false);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [localStartedAt] = useState(() =>
     job.timings.startedAt ??
@@ -63,6 +63,10 @@ export function GenerationCard({
   const assetId = asset?.id ?? job.outputAssetIds[0];
   const fullSrc = assetId ? assetUrl(assetId) : null;
   const thumbSrc = assetId ? assetUrl(assetId, { thumb: true }) : null;
+  const lightboxIds =
+    assets.length > 0 ? assets.map((a) => a.id) : assetId ? [assetId] : [];
+  const lightboxId =
+    openIndex !== null ? (lightboxIds[openIndex] ?? null) : null;
   const aspect =
     typeof job.params.aspectRatio === 'string'
       ? job.params.aspectRatio
@@ -136,7 +140,7 @@ export function GenerationCard({
             <button
               type="button"
               className="absolute inset-0 block size-full outline-none"
-              onClick={() => setOpen(true)}
+              onClick={() => setOpenIndex(0)}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -261,11 +265,19 @@ export function GenerationCard({
         ) : null}
       </div>
 
-      {open && fullSrc ? (
+      {lightboxId !== null && openIndex !== null ? (
         <Lightbox
-          src={fullSrc}
+          src={assetUrl(lightboxId)}
           alt={job.prompt}
-          onClose={() => setOpen(false)}
+          onClose={() => setOpenIndex(null)}
+          hasPrev={openIndex > 0}
+          hasNext={openIndex < lightboxIds.length - 1}
+          onPrev={() => setOpenIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
+          onNext={() =>
+            setOpenIndex((i) =>
+              i !== null && i < lightboxIds.length - 1 ? i + 1 : i,
+            )
+          }
         />
       ) : null}
 
@@ -274,6 +286,7 @@ export function GenerationCard({
         title="Cancel this generation?"
         description="This will stop the job. You can start a new one anytime."
         confirmLabel="Cancel generation"
+        cancelLabel="Keep generating"
         danger
         onConfirm={() => {
           onCancel();

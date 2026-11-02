@@ -45,7 +45,9 @@ export function PromptMessage({
   inputAssetIds: string[];
   onEdit: () => void;
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const openId =
+    openIndex !== null ? (inputAssetIds[openIndex] ?? null) : null;
 
   return (
     <div className="group/prompt flex w-full flex-col items-end gap-2">
@@ -56,7 +58,7 @@ export function PromptMessage({
               key={id}
               type="button"
               aria-label={`View selected ${i + 1}`}
-              onClick={() => setOpenId(id)}
+              onClick={() => setOpenIndex(i)}
               className="overflow-hidden rounded-xl p-0 transition-opacity hover:opacity-90"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -102,11 +104,19 @@ export function PromptMessage({
         </div>
       </div>
 
-      {openId ? (
+      {openId && openIndex !== null ? (
         <Lightbox
           src={assetUrl(openId)}
-          alt={`Selected image`}
-          onClose={() => setOpenId(null)}
+          alt="Selected image"
+          onClose={() => setOpenIndex(null)}
+          hasPrev={openIndex > 0}
+          hasNext={openIndex < inputAssetIds.length - 1}
+          onPrev={() => setOpenIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
+          onNext={() =>
+            setOpenIndex((i) =>
+              i !== null && i < inputAssetIds.length - 1 ? i + 1 : i,
+            )
+          }
         />
       ) : null}
     </div>

@@ -54,6 +54,7 @@ function stubAssets(assetIds: string[]): AssetDto[] {
     width: 1,
     height: 1,
     source: 'generated',
+    favorited: false,
     createdAt: now,
   }));
 }

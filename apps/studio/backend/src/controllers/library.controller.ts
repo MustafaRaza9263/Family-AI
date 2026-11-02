@@ -22,15 +22,42 @@ export function createLibraryController(service: LibraryService) {
           req.query.source === 'upload' || req.query.source === 'generated'
             ? (req.query.source as AssetSource)
             : undefined;
+        // Zod validate transforms 'true'|'false' → boolean on req.query.
+        const favorited =
+          typeof req.query.favorited === 'boolean'
+            ? req.query.favorited
+            : undefined;
         const cursor =
           typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
         const limit = Number(req.query.limit ?? 24);
         const body = await service.list(req.auth.user.id, {
           kind,
           source,
+          favorited,
           cursor,
           limit,
         });
+        res.status(200).json(body);
+      } catch (err) {
+        next(err);
+      }
+    },
+
+    async toggleFavorite(
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ): Promise<void> {
+      try {
+        if (!req.auth) {
+          throw new AppError(
+            401,
+            ErrorCodes.UNAUTHENTICATED,
+            'Authentication required',
+          );
+        }
+        const id = String(req.params.id ?? '');
+        const body = await service.toggleFavorite(req.auth.user.id, id);
         res.status(200).json(body);
       } catch (err) {
         next(err);

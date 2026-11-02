@@ -14,6 +14,8 @@ export const assetSchema = z.object({
   threadId: z.string().optional(),
   jobId: z.string().optional(),
   parentAssetId: z.string().optional(),
+  /** Per-user; false outside library enrichment. */
+  favorited: z.boolean().default(false),
   createdAt: z.string().datetime(),
 });
 

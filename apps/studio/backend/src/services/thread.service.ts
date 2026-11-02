@@ -73,7 +73,7 @@ export class ThreadService {
       thread: toThreadDto(thread),
       items: jobs.map((job) => ({
         job: toUserJob(job),
-        assets: (byJob.get(job.id) ?? []).map(toAssetDto),
+        assets: (byJob.get(job.id) ?? []).map((a) => toAssetDto(a)),
       })),
     };
   }

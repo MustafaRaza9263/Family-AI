@@ -1,6 +1,7 @@
 'use client';
 
 import type { AssetDto } from '@studio/shared';
+import { Heart, ImageIcon, Images, Video } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -20,7 +21,11 @@ import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/errors';
 import { assetUrl } from '@/lib/files';
-import { useDeleteLibraryAsset, useLibraryInfinite } from '../hooks';
+import {
+  useDeleteLibraryAsset,
+  useLibraryInfinite,
+  useToggleFavorite,
+} from '../hooks';
 import { LibraryGrid, LibraryGridSkeleton } from './library-grid';
 
 function toastApiError(err: unknown): void {
@@ -30,20 +35,23 @@ function toastApiError(err: unknown): void {
 
 function LibraryPane({
   kind,
+  favoritedOnly,
   selected,
   selectedIds,
   maxSelect,
   onToggleSelect,
 }: {
   kind: AssetDto['kind'] | undefined;
+  favoritedOnly: boolean;
   selected: AssetDto[];
   selectedIds: Set<string>;
   maxSelect: number;
   onToggleSelect: (asset: AssetDto) => void;
 }) {
   const router = useRouter();
-  const query = useLibraryInfinite(kind);
+  const query = useLibraryInfinite(kind, favoritedOnly);
   const del = useDeleteLibraryAsset();
+  const favorite = useToggleFavorite();
   const [lightbox, setLightbox] = useState<AssetDto | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
@@ -52,20 +60,45 @@ function LibraryPane({
     [query.data],
   );
 
+  const lightboxIndex = lightbox
+    ? items.findIndex((a) => a.id === lightbox.id)
+    : -1;
+
   if (query.isLoading) {
     return <LibraryGridSkeleton />;
   }
 
   if (items.length === 0) {
+    const icon = favoritedOnly ? (
+      <Heart strokeWidth={1.5} />
+    ) : kind === 'video' ? (
+      <Video strokeWidth={1.5} />
+    ) : kind === 'image' ? (
+      <ImageIcon strokeWidth={1.5} />
+    ) : (
+      <Images strokeWidth={1.5} />
+    );
     return (
-      <EmptyState
-        title={kind === 'video' ? 'No videos yet' : 'No generations yet'}
-        description={
-          kind === 'video'
-            ? 'Video tools will appear here when available.'
-            : 'Create something and it will show up in your library.'
-        }
-      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <EmptyState
+          className="py-0"
+          icon={icon}
+          title={
+            favoritedOnly
+              ? 'No favorites yet'
+              : kind === 'video'
+                ? 'No videos yet'
+                : 'No generations yet'
+          }
+          description={
+            favoritedOnly
+              ? 'Tap the heart on any image or video to save it here.'
+              : kind === 'video'
+                ? 'Video tools will appear here when available.'
+                : 'Create something and it will show up in your library.'
+          }
+        />
+      </div>
     );
   }
 
@@ -86,6 +119,11 @@ function LibraryPane({
           router.push(`/create/?tool=image&base=${asset.id}`);
         }}
         onDelete={(asset) => setConfirmId(asset.id)}
+        onToggleFavorite={(asset) => {
+          favorite.mutate(asset.id, {
+            onError: toastApiError,
+          });
+        }}
         onToggleSelect={(asset) => {
           if (asset.kind !== 'image') return;
           if (
@@ -99,11 +137,15 @@ function LibraryPane({
         }}
       />
 
-      {lightbox ? (
+      {lightbox && lightboxIndex >= 0 ? (
         <Lightbox
           src={assetUrl(lightbox.id)}
           alt="Library item"
           onClose={() => setLightbox(null)}
+          hasPrev={lightboxIndex > 0}
+          hasNext={lightboxIndex < items.length - 1}
+          onPrev={() => setLightbox(items[lightboxIndex - 1] ?? null)}
+          onNext={() => setLightbox(items[lightboxIndex + 1] ?? null)}
         />
       ) : null}
 
@@ -134,6 +176,10 @@ const tabTriggerClass =
   'data-[state=active]:bg-surface-muted data-[state=active]:text-foreground ' +
   'data-[state=active]:shadow-none';
 
+const filterChipClass =
+  'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[15px] font-medium ' +
+  'transition-colors duration-150';
+
 export function LibraryPage() {
   const router = useRouter();
   const caps = useCapabilities();
@@ -141,6 +187,7 @@ export function LibraryPage() {
   const createGen = useCreateGeneration();
   const [selected, setSelected] = useState<AssetDto[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [favoritedOnly, setFavoritedOnly] = useState(false);
 
   const selectedIds = useMemo(
     () => new Set(selected.map((a) => a.id)),
@@ -196,6 +243,7 @@ export function LibraryPage() {
   };
 
   const paneProps = {
+    favoritedOnly,
     selected,
     selectedIds,
     maxSelect,
@@ -205,15 +253,18 @@ export function LibraryPage() {
   return (
     <div
       className={cn(
-        'flex min-h-full w-full min-w-0 flex-col',
+        'flex h-full min-h-full w-full min-w-0 flex-col',
         selected.length > 0 && 'pb-2',
       )}
     >
-      <div className="min-w-0 flex-1 space-y-5">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-          Library
-        </h1>
-        <Tabs defaultValue="image">
+      <h1 className="shrink-0 text-3xl font-semibold tracking-tight text-foreground">
+        Library
+      </h1>
+      <Tabs
+        defaultValue="image"
+        className="mt-5 flex min-h-0 flex-1 flex-col"
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <TabsList className="h-auto gap-1 rounded-none border-0 bg-transparent p-0">
             <TabsTrigger value="image" className={tabTriggerClass}>
               Images
@@ -225,17 +276,43 @@ export function LibraryPage() {
               All
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="image" className="mt-5">
-            <LibraryPane kind="image" {...paneProps} />
-          </TabsContent>
-          <TabsContent value="video" className="mt-5">
-            <LibraryPane kind="video" {...paneProps} />
-          </TabsContent>
-          <TabsContent value="all" className="mt-5">
-            <LibraryPane kind={undefined} {...paneProps} />
-          </TabsContent>
-        </Tabs>
-      </div>
+          <button
+            type="button"
+            aria-pressed={favoritedOnly}
+            onClick={() => setFavoritedOnly((v) => !v)}
+            className={cn(
+              filterChipClass,
+              favoritedOnly
+                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                : 'text-muted-foreground hover:bg-surface-muted hover:text-foreground',
+            )}
+          >
+            <Heart
+              className={cn('size-3.5', favoritedOnly && 'fill-current')}
+              strokeWidth={2}
+            />
+            Favorites
+          </button>
+        </div>
+        <TabsContent
+          value="image"
+          className="relative mt-5 min-h-0 flex-1 data-[state=inactive]:hidden"
+        >
+          <LibraryPane kind="image" {...paneProps} />
+        </TabsContent>
+        <TabsContent
+          value="video"
+          className="relative mt-5 min-h-0 flex-1 data-[state=inactive]:hidden"
+        >
+          <LibraryPane kind="video" {...paneProps} />
+        </TabsContent>
+        <TabsContent
+          value="all"
+          className="relative mt-5 min-h-0 flex-1 data-[state=inactive]:hidden"
+        >
+          <LibraryPane kind={undefined} {...paneProps} />
+        </TabsContent>
+      </Tabs>
 
       {selected.length > 0 && imageTool ? (
         <div

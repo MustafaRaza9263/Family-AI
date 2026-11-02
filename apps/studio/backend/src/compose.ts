@@ -8,6 +8,7 @@ import { MongoSessionRepository } from './db/repositories/mongo-session-reposito
 import { MongoThreadRepository } from './db/repositories/mongo-thread-repository.js';
 import { MongoJobRepository } from './db/repositories/mongo-job-repository.js';
 import { MongoAssetRepository } from './db/repositories/mongo-asset-repository.js';
+import { MongoFavoriteRepository } from './db/repositories/mongo-favorite-repository.js';
 import { MongoUsageDailyRepository } from './db/repositories/mongo-usage-daily-repository.js';
 import { MongoSettingsRepository } from './db/repositories/mongo-settings-repository.js';
 import { MongoAuditRepository } from './db/repositories/mongo-audit-repository.js';
@@ -16,6 +17,7 @@ import type { SessionRepository } from './db/repositories/session-repository.js'
 import type { ThreadRepository } from './db/repositories/thread-repository.js';
 import type { JobRepository } from './db/repositories/job-repository.js';
 import type { AssetRepository } from './db/repositories/asset-repository.js';
+import type { FavoriteRepository } from './db/repositories/favorite-repository.js';
 import type { UsageDailyRepository } from './db/repositories/usage-daily-repository.js';
 import type { SettingsRepository } from './db/repositories/settings-repository.js';
 import type { AuditRepository } from './db/repositories/audit-repository.js';
@@ -87,6 +89,7 @@ export async function compose(
   const threads = new MongoThreadRepository(db);
   const jobs = new MongoJobRepository(db);
   const assets = new MongoAssetRepository(db);
+  const favorites: FavoriteRepository = new MongoFavoriteRepository(db);
   const usage = new MongoUsageDailyRepository(db);
   const settings = new MongoSettingsRepository(db);
   const audit = new MongoAuditRepository(db);
@@ -174,7 +177,7 @@ export async function compose(
     logger,
     dataDir: env.DATA_DIR,
   });
-  const library = new LibraryService(assets);
+  const library = new LibraryService(assets, favorites, clock);
   const uploads = new UploadService({
     assets,
     dataDir: env.DATA_DIR,

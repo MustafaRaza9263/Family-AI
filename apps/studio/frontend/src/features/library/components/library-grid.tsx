@@ -1,7 +1,7 @@
 'use client';
 
 import type { AssetDto } from '@studio/shared';
-import { Check, Pencil, Trash2 } from 'lucide-react';
+import { Check, Heart, Pencil, Trash2 } from 'lucide-react';
 import {
   useEffect,
   useRef,
@@ -100,6 +100,7 @@ function LibraryTile({
   onEdit,
   onDelete,
   onToggleSelect,
+  onToggleFavorite,
 }: {
   asset: AssetDto;
   selected: boolean;
@@ -108,6 +109,7 @@ function LibraryTile({
   onEdit: (asset: AssetDto) => void;
   onDelete: (asset: AssetDto) => void;
   onToggleSelect: (asset: AssetDto) => void;
+  onToggleFavorite: (asset: AssetDto) => void;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressedRef = useRef(false);
@@ -222,6 +224,39 @@ function LibraryTile({
           <Trash2 className="size-4" strokeWidth={2} />
         </OverlayIcon>
       </div>
+
+      <button
+        type="button"
+        aria-label={asset.favorited ? 'Remove from favorites' : 'Add to favorites'}
+        aria-pressed={asset.favorited}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite(asset);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        className={cn(
+          'absolute bottom-2.5 right-2.5 z-10 grid size-9 place-items-center rounded-full',
+          'shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-sm',
+          'bg-[color-mix(in_srgb,#1a1a1a_55%,transparent)]',
+          'transition-[transform,background-color,opacity] duration-150',
+          'hover:scale-105 active:scale-95',
+          // Always on mobile; hover/focus only on desktop.
+          'opacity-100',
+          'md:pointer-events-none md:opacity-0',
+          'md:group-hover:pointer-events-auto md:group-hover:opacity-100',
+          'md:group-focus-within:pointer-events-auto md:group-focus-within:opacity-100',
+        )}
+      >
+        <Heart
+          className={cn(
+            'size-4 transition-colors',
+            asset.favorited
+              ? 'fill-rose-500 text-rose-500'
+              : 'fill-transparent text-white',
+          )}
+          strokeWidth={2}
+        />
+      </button>
     </div>
   );
 }
@@ -236,6 +271,7 @@ export function LibraryGrid({
   onEdit,
   onDelete,
   onToggleSelect,
+  onToggleFavorite,
 }: {
   items: AssetDto[];
   hasMore: boolean;
@@ -246,6 +282,7 @@ export function LibraryGrid({
   onEdit: (asset: AssetDto) => void;
   onDelete: (asset: AssetDto) => void;
   onToggleSelect: (asset: AssetDto) => void;
+  onToggleFavorite: (asset: AssetDto) => void;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const selectionActive = selectedIds.size > 0;
@@ -273,6 +310,7 @@ export function LibraryGrid({
             onEdit={onEdit}
             onDelete={onDelete}
             onToggleSelect={onToggleSelect}
+            onToggleFavorite={onToggleFavorite}
           />
         ))}
         {loadingMore
