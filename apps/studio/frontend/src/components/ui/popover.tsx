@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 
 export const Popover = PopoverPrimitive.Root;
 export const PopoverTrigger = PopoverPrimitive.Trigger;
+export const PopoverArrow = PopoverPrimitive.Arrow;
 
 export function PopoverContent({
   className,

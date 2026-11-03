@@ -88,7 +88,9 @@ export {
 export {
   assetKindSchema,
   assetSourceSchema,
+  assetOwnerSchema,
   assetSchema,
+  type AssetOwner,
   type AssetDto,
 } from './schemas/asset.js';
 
@@ -131,10 +133,27 @@ export {
 export {
   adminJobsQuerySchema,
   adminJobsResponseSchema,
+  adminJobDetailResponseSchema,
+  adminJobRowSchema,
+  adminJobDetailSchema,
+  adminStatsQuerySchema,
+  adminStatsSchema,
+  adminEventSchema,
+  adminLivePayloadSchema,
+  adminLiveSnapshotSchema,
+  adminJobMetricsSchema,
   adminRunSchema,
   adminRunsQuerySchema,
   adminRunsResponseSchema,
+  type AdminJobRow,
+  type AdminJobDetail,
   type AdminJobsQuery,
+  type AdminStats,
+  type AdminStatsQuery,
+  type AdminStatsRange,
+  type AdminEvent,
+  type AdminLiveSnapshot,
+  type AdminJobMetrics,
   type AdminRun,
   type AdminRunsQuery,
 } from './schemas/admin-studio.js';

@@ -7,6 +7,8 @@ export type {
   RunEnd,
   RunEvent,
   RunMeta,
+  RunSnapshot,
+  SnapshotNode,
   Telemetry,
   ToolKind,
 } from './types.js';

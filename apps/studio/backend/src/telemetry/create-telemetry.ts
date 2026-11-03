@@ -15,7 +15,8 @@ import {
   trackSample,
   type RunState,
 } from './run-tracker.js';
-import type { RunEnd, RunEvent, RunMeta, Telemetry } from './types.js';
+import { buildSnapshot } from './snapshot.js';
+import type { HardwareSample, RunEnd, RunEvent, RunMeta, Telemetry } from './types.js';
 
 export type CreateTelemetryDeps = {
   store: MetricsStore;
@@ -30,6 +31,8 @@ function noopTelemetry(): Telemetry {
     runStart: () => undefined,
     runEvent: () => undefined,
     runEnd: () => undefined,
+    snapshot: () => null,
+    watch: () => () => undefined,
     flush: async () => undefined,
   };
 }
@@ -45,6 +48,8 @@ export function createTelemetry(deps: CreateTelemetryDeps): Telemetry {
   const runs = new Map<string, RunState>();
   const persister = createPersister(store, logger);
   let timer: ReturnType<typeof setInterval> | null = null;
+  const watchers = new Set<(sample: HardwareSample) => void>();
+  let watchTimer: ReturnType<typeof setInterval> | null = null;
 
   const sampleActive = (): void => {
     let sample;
@@ -72,6 +77,23 @@ export function createTelemetry(deps: CreateTelemetryDeps): Telemetry {
     if (runs.size === 0 && timer !== null) {
       clearInterval(timer);
       timer = null;
+    }
+  };
+
+  const tickWatchers = (): void => {
+    let sample: HardwareSample;
+    try {
+      sample = sampler.read();
+    } catch (err) {
+      logger.warn({ err }, 'telemetry watch sampler.read failed');
+      return;
+    }
+    for (const listener of watchers) {
+      try {
+        listener(sample);
+      } catch {
+        // Never let a bad watcher stop the loop.
+      }
     }
   };
 
@@ -131,11 +153,56 @@ export function createTelemetry(deps: CreateTelemetryDeps): Telemetry {
       }
     },
 
+    snapshot(jobId: string) {
+      try {
+        const state = runs.get(jobId);
+        if (!state || state.ended) return null;
+        return buildSnapshot(state, clock.now());
+      } catch (err) {
+        logger.warn({ err, jobId }, 'telemetry snapshot failed');
+        return null;
+      }
+    },
+
+    watch(listener, intervalMs = 1000) {
+      watchers.add(listener);
+      try {
+        sampler.acquire();
+      } catch (err) {
+        logger.warn({ err }, 'telemetry watch acquire failed');
+      }
+      if (watchTimer === null) {
+        watchTimer = setInterval(tickWatchers, intervalMs);
+        watchTimer.unref?.();
+        tickWatchers();
+      }
+      let stopped = false;
+      return () => {
+        if (stopped) return;
+        stopped = true;
+        watchers.delete(listener);
+        try {
+          sampler.release();
+        } catch (err) {
+          logger.warn({ err }, 'telemetry watch release failed');
+        }
+        if (watchers.size === 0 && watchTimer !== null) {
+          clearInterval(watchTimer);
+          watchTimer = null;
+        }
+      };
+    },
+
     async flush(): Promise<void> {
       if (timer !== null) {
         clearInterval(timer);
         timer = null;
       }
+      if (watchTimer !== null) {
+        clearInterval(watchTimer);
+        watchTimer = null;
+      }
+      watchers.clear();
       for (const jobId of [...runs.keys()]) {
         runs.delete(jobId);
         try {

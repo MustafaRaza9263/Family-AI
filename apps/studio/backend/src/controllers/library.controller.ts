@@ -30,13 +30,16 @@ export function createLibraryController(service: LibraryService) {
         const cursor =
           typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
         const limit = Number(req.query.limit ?? 24);
-        const body = await service.list(req.auth.user.id, {
-          kind,
-          source,
-          favorited,
-          cursor,
-          limit,
-        });
+        const body = await service.list(
+          { id: req.auth.user.id, role: req.auth.user.role },
+          {
+            kind,
+            source,
+            favorited,
+            cursor,
+            limit,
+          },
+        );
         res.status(200).json(body);
       } catch (err) {
         next(err);

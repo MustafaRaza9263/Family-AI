@@ -11,8 +11,8 @@ function toRecord(doc: AssetDocument): AssetRecord {
   return {
     id: doc._id.toHexString(),
     userId: doc.userId.toHexString(),
-    threadId: doc.threadId?.toHexString(),
-    jobId: doc.jobId?.toHexString(),
+    threadId: doc.threadId?.toHexString() ?? undefined,
+    jobId: doc.jobId?.toHexString() ?? undefined,
     kind: doc.kind,
     filePath: doc.filePath,
     thumbPath: doc.thumbPath,
@@ -20,11 +20,11 @@ function toRecord(doc: AssetDocument): AssetRecord {
     bytes: doc.bytes,
     width: doc.width,
     height: doc.height,
-    durationSec: doc.durationSec,
+    durationSec: doc.durationSec ?? undefined,
     source: doc.source,
-    parentAssetId: doc.parentAssetId?.toHexString(),
+    parentAssetId: doc.parentAssetId?.toHexString() ?? undefined,
     createdAt: doc.createdAt,
-    deletedAt: doc.deletedAt,
+    deletedAt: doc.deletedAt ?? undefined,
   };
 }
 
@@ -91,12 +91,14 @@ export class MongoAssetRepository implements AssetRepository {
   }
 
   async listLibrary(opts: ListLibraryOpts): Promise<AssetRecord[]> {
-    if (!ObjectId.isValid(opts.userId)) return [];
+    if (opts.userId !== undefined && !ObjectId.isValid(opts.userId)) return [];
     if (opts.assetIds && opts.assetIds.length === 0) return [];
     const filter: Record<string, unknown> = {
-      userId: new ObjectId(opts.userId),
       deletedAt: { $exists: false },
     };
+    if (opts.userId !== undefined) {
+      filter.userId = new ObjectId(opts.userId);
+    }
     if (opts.kind) filter.kind = opts.kind;
     // Derived frames are Continue helpers, never library tiles.
     if (opts.source) filter.source = opts.source;

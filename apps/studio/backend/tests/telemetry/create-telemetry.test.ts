@@ -72,6 +72,7 @@ describe('createTelemetry', () => {
         throw new Error('db down');
       }),
       findByJobId: async () => null,
+      findByJobIds: async () => [],
       list: async () => [],
     };
     const telemetry = createTelemetry({

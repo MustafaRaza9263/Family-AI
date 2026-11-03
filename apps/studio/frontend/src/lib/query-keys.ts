@@ -11,4 +11,9 @@ export const queryKeys = {
   adminUsers: (status: string | undefined, q: string, page: number) =>
     ['admin', 'users', status ?? 'all', q, page] as const,
   adminEngine: ['admin', 'engine'] as const,
+  adminStats: (range: string) => ['admin', 'stats', range] as const,
+  /** Infinite cursor-paginated jobs list. */
+  adminJobsInfinite: (filter: Record<string, string>) =>
+    ['admin', 'jobs', 'infinite', filter] as const,
+  adminJob: (id: string) => ['admin', 'job', id] as const,
 };

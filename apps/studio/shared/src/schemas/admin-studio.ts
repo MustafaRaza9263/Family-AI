@@ -1,17 +1,29 @@
 import { z } from 'zod';
-import { adminJobSchema } from './job.js';
 
-export const adminJobsQuerySchema = z.object({
-  cursor: z.string().min(1).optional(),
-  limit: z.coerce.number().int().positive().max(50).default(20),
-});
-
-export const adminJobsResponseSchema = z.object({
-  items: z.array(adminJobSchema),
-  nextCursor: z.string().nullable(),
-});
-
-/** Metrics row shape for admin runs (ISO date strings over the wire). */
+export {
+  adminJobsQuerySchema,
+  adminJobsResponseSchema,
+  adminJobDetailResponseSchema,
+  adminJobRowSchema,
+  adminJobDetailSchema,
+  adminStatsQuerySchema,
+  adminStatsSchema,
+  adminEventSchema,
+  adminLivePayloadSchema,
+  adminLiveSnapshotSchema,
+  adminJobMetricsSchema,
+  adminStatsRangeSchema,
+  type AdminJobRow,
+  type AdminJobDetail,
+  type AdminJobsQuery,
+  type AdminStats,
+  type AdminStatsQuery,
+  type AdminStatsRange,
+  type AdminEvent,
+  type AdminLiveSnapshot,
+  type AdminJobMetrics,
+} from './admin-jobs.js';
+/** Metrics row shape for legacy admin runs (ISO date strings over the wire). */
 export const adminRunSchema = z.object({
   jobId: z.string().min(1),
   userId: z.string().min(1),
@@ -43,6 +55,5 @@ export const adminRunsResponseSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 
-export type AdminJobsQuery = z.infer<typeof adminJobsQuerySchema>;
 export type AdminRun = z.infer<typeof adminRunSchema>;
 export type AdminRunsQuery = z.infer<typeof adminRunsQuerySchema>;

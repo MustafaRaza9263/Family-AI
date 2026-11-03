@@ -15,6 +15,7 @@ export type JobRecord = {
   parentAssetId?: string;
   comfyPromptId?: string;
   errorCode?: string;
+  errorDetail?: string;
   attempts: number;
   timings: {
     queuedAt: Date;
@@ -41,6 +42,7 @@ export type FinishJobInput = {
   finishedAt: Date;
   outputAssetIds?: string[];
   errorCode?: string;
+  errorDetail?: string;
 };
 
 export type ListJobsByThreadOpts = {
@@ -50,6 +52,19 @@ export type ListJobsByThreadOpts = {
 export type ListAdminJobsOpts = {
   limit: number;
   before?: { queuedAt: Date; id: string };
+  status?: JobStatus;
+  tool?: JobTool;
+  recipeId?: string;
+  userIds?: string[];
+  promptRegex?: string;
+  from?: Date;
+  to?: Date;
+};
+
+export type ListJobsForStatsOpts = {
+  from: Date;
+  to: Date;
+  limit: number;
 };
 
 export interface JobRepository {
@@ -59,6 +74,7 @@ export interface JobRepository {
   listByStatus(status: JobStatus): Promise<JobRecord[]>;
   listByThread(opts: ListJobsByThreadOpts): Promise<JobRecord[]>;
   listAdmin(opts: ListAdminJobsOpts): Promise<JobRecord[]>;
+  listForStats(opts: ListJobsForStatsOpts): Promise<JobRecord[]>;
   countByUserAndStatuses(
     userId: string,
     statuses: JobStatus[],

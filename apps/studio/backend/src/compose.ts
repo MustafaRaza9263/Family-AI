@@ -21,6 +21,7 @@ import type { FavoriteRepository } from './db/repositories/favorite-repository.j
 import type { UsageDailyRepository } from './db/repositories/usage-daily-repository.js';
 import type { SettingsRepository } from './db/repositories/settings-repository.js';
 import type { AuditRepository } from './db/repositories/audit-repository.js';
+import { wireAdminLive } from './events/admin-live.js';
 import { createEventHub, type EventHub } from './events/hub.js';
 import { systemClock, type Clock } from './lib/clock.js';
 import { createLogger, type Logger } from './lib/logger.js';
@@ -199,16 +200,33 @@ export async function compose(
     dataDir: env.DATA_DIR,
     clock,
   });
-  const library = new LibraryService(assets, favorites, clock);
+  const library = new LibraryService(assets, favorites, users, clock);
   const uploads = new UploadService({
     assets,
     dataDir: env.DATA_DIR,
     clock,
   });
+  wireAdminLive({
+    hub,
+    telemetry,
+    getEngineState: () => worker.getEngineState(),
+    getQueuedCount: async () => (await jobs.listQueued()).length,
+    getCurrent: () => worker.current(),
+    resolveUserName: async (userId) => {
+      const user = await users.findById(userId);
+      return user?.fullName ?? 'Unknown';
+    },
+  });
+
   const adminStudio = new AdminStudioService({
     jobs,
+    users,
+    assets,
     settings,
     metrics: metricsStore,
+    telemetry,
+    retentionDays: env.TELEMETRY_RETENTION_DAYS,
+    now: () => clock.now(),
     wake: () => worker.wake(),
     setEnginePaused: (paused) => worker.setEnginePaused(paused),
   });

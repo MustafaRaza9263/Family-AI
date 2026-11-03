@@ -2,7 +2,7 @@
 
 import type { ToolCapability } from '@studio/shared';
 import { Images, Plus } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import {
   getBarControls,
@@ -46,6 +46,7 @@ export function ControlBar({
   onVariantChange,
   onValueChange,
   onPickFiles,
+  startSlot,
 }: {
   tool: ToolCapability;
   inputImageCount: number;
@@ -67,6 +68,8 @@ export function ControlBar({
   onVariantChange: (id: string) => void;
   onValueChange: (id: string, value: ControlValue) => void;
   onPickFiles: (files: FileList | null) => void;
+  /** Optional leading control (e.g. Home image/video switch). */
+  startSlot?: ReactNode;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const variants = listVariants(tool, inputImageCount);
@@ -84,6 +87,7 @@ export function ControlBar({
 
   return (
     <div className="flex min-w-0 max-w-full items-center gap-1.5">
+      {startSlot}
       {framesMode ? (
         <button
           type="button"

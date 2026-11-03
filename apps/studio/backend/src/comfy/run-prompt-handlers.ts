@@ -53,11 +53,18 @@ export function handlePromptEvent(
         { detail: event.detail },
         'comfy execution_error',
       );
+      const detail =
+        typeof event.detail === 'string'
+          ? event.detail
+          : event.detail !== undefined
+            ? JSON.stringify(event.detail)
+            : undefined;
       ctx.finish({
         kind: 'error',
         error: new EngineError(
           EngineErrorCodes.ENGINE_FAILED,
           'Image generation failed',
+          detail,
         ),
       });
       return;

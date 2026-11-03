@@ -1,9 +1,9 @@
-import type { AssetDto } from '@studio/shared';
+import type { AssetDto, AssetOwner } from '@studio/shared';
 import type { AssetRecord } from '../db/repositories/asset-repository.js';
 
 export function toAssetDto(
   asset: AssetRecord,
-  opts?: { favorited?: boolean },
+  opts?: { favorited?: boolean; owner?: AssetOwner },
 ): AssetDto {
   return {
     id: asset.id,
@@ -19,6 +19,7 @@ export function toAssetDto(
     jobId: asset.jobId ?? undefined,
     parentAssetId: asset.parentAssetId ?? undefined,
     favorited: opts?.favorited ?? false,
+    owner: opts?.owner,
     createdAt: asset.createdAt.toISOString(),
   };
 }

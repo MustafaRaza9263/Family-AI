@@ -21,11 +21,18 @@ function sampleJob(): JobRecord {
 }
 
 describe('job mappers', () => {
-  it('toUserJob omits recipeId and attempts', () => {
-    const dto = toUserJob(sampleJob());
+  it('toUserJob omits recipeId, attempts, and errorDetail', () => {
+    const dto = toUserJob({
+      ...sampleJob(),
+      errorCode: 'ENGINE_FAILED',
+      errorDetail: 'internal comfy stack',
+    });
     expect(dto).not.toHaveProperty('recipeId');
     expect(dto).not.toHaveProperty('userId');
     expect(dto).not.toHaveProperty('attempts');
+    expect(dto).not.toHaveProperty('errorDetail');
+    expect(JSON.stringify(dto)).not.toContain('internal comfy');
+    expect(dto.errorCode).toBe('ENGINE_FAILED');
     expect(dto.prompt).toBe('hello');
   });
 

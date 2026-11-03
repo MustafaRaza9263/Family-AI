@@ -52,9 +52,10 @@ export class MemoryAssetRepository implements AssetRepository {
 
   async listLibrary(opts: ListLibraryOpts): Promise<AssetRecord[]> {
     if (opts.assetIds && opts.assetIds.length === 0) return [];
-    let rows = [...this.assets.values()].filter(
-      (a) => a.userId === opts.userId && !a.deletedAt,
-    );
+    let rows = [...this.assets.values()].filter((a) => !a.deletedAt);
+    if (opts.userId !== undefined) {
+      rows = rows.filter((a) => a.userId === opts.userId);
+    }
     if (opts.kind) rows = rows.filter((a) => a.kind === opts.kind);
     if (opts.source) rows = rows.filter((a) => a.source === opts.source);
     else rows = rows.filter((a) => a.source !== 'derived');

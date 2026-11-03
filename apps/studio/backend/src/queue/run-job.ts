@@ -13,11 +13,14 @@ import type {
 } from '../db/repositories/job-repository.js';
 import type { Telemetry } from '../telemetry/types.js';
 import type { MediaTools } from '../media/types.js';
+import type { CurrentJobSlot } from './current-job.js';
 import { publishQueuePositions } from './positions.js';
 import { stageFromNodeClass } from './stage.js';
 import { writeImageOutput, writeVideoOutput } from './write-output.js';
 
 export type AbortMap = Map<string, AbortController>;
+
+const ERROR_DETAIL_MAX = 500;
 
 export type RunJobDeps = {
   comfy: ComfyClient;
@@ -32,6 +35,7 @@ export type RunJobDeps = {
   dataDir: string;
   aborts: AbortMap;
   lastServedAt: Map<string, number>;
+  currentJob: CurrentJobSlot;
 };
 
 export async function runClaimedJob(
@@ -41,6 +45,13 @@ export async function runClaimedJob(
   const ac = new AbortController();
   deps.aborts.set(job.id, ac);
   const startedAt = job.timings.startedAt ?? deps.clock.now();
+  deps.currentJob.set({
+    jobId: job.id,
+    userId: job.userId,
+    recipeId: job.recipeId,
+    stage: 'preparing',
+    startedAt,
+  });
 
   safeTelemetry(() =>
     deps.telemetry.runStart(job.id, {
@@ -73,6 +84,8 @@ export async function runClaimedJob(
           );
         },
         onNodeStart(info) {
+          const stage = stageFromNodeClass(info.nodeClass);
+          deps.currentJob.setStage(stage);
           safeTelemetry(() =>
             deps.telemetry.runEvent(job.id, {
               type: 'node_start',
@@ -85,10 +98,11 @@ export async function runClaimedJob(
           safePublish(deps.hub, job.userId, {
             type: 'job.progress',
             jobId: job.id,
-            stage: stageFromNodeClass(info.nodeClass),
+            stage,
           });
         },
         onProgress(info) {
+          deps.currentJob.setStage('generating');
           safePublish(deps.hub, job.userId, {
             type: 'job.progress',
             jobId: job.id,
@@ -161,6 +175,7 @@ export async function runClaimedJob(
   } catch (err) {
     await failJob(job, err, deps, startedAt, ac.signal.aborted);
   } finally {
+    deps.currentJob.set(null);
     deps.aborts.delete(job.id);
     await publishQueuePositions(deps.jobs, deps.hub, deps.lastServedAt).catch(
       () => undefined,
@@ -221,10 +236,21 @@ async function failJob(
           : 'ENGINE_FAILED';
   const status = code === 'ENGINE_CANCELLED' ? 'cancelled' : 'failed';
   const finishedAt = deps.clock.now();
+  const rawDetail =
+    err instanceof EngineError
+      ? err.internalDetail
+      : err instanceof Error
+        ? err.message
+        : undefined;
+  const errorDetail =
+    rawDetail && rawDetail.length > 0
+      ? rawDetail.slice(0, ERROR_DETAIL_MAX)
+      : undefined;
   await deps.jobs.finish(job.id, {
     status,
     finishedAt,
     errorCode: code,
+    errorDetail,
   });
   if (
     deps.limits.shouldRefund({

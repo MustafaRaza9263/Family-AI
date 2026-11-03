@@ -1,7 +1,7 @@
 # company-ai — Source of Truth
 
 > What exists, where it lives, and how we work. Update this file in the same commit as any architectural change.
-> Last updated: 2026-11-02
+> Last updated: 2026-11-03 (Home landing layout)
 
 ## 1. What this is
 
@@ -325,7 +325,7 @@ Public DTOs, Zod request schemas, `pickMode`, `PRODUCT_NAME` ("Family Studio"), 
 | Uploads | `POST /uploads` (multipart `file`; jpeg/png/webp ≤10 MB; sanitize + PNG; rate 30/min/user) |
 | Live | `GET /events` (SSE; event shapes in `@studio/shared`) |
 | Files | `GET /files/:assetId` (`?thumb=1`, `?download=1`; **HTTP Range** for video seek; `Cache-Control: private, immutable`; path from DB only) · `DELETE /assets/:id` (owner or admin) · **`POST /assets/:id/frame`** (`{ at: first\|last }` → derived image asset; rate 30/min/user) |
-| Library | `GET /library?kind=image\|video&source=generated\|upload&favorited=true\|false&cursor&limit` (own, not deleted; **default source `generated`**; `favorited=true` filters to favorites) · `POST /assets/:id/favorite` (toggle; `{ favorited }`) |
+| Library | `GET /library?kind=image\|video&source=generated\|upload&favorited=true\|false&cursor&limit` (own, not deleted; **admins see all users' creations** with `owner: { id, fullName, email }` on each item; **default source `generated`**; `favorited=true` filters to the caller's favorites) · `POST /assets/:id/favorite` (toggle; `{ favorited }`; own assets only) |
 | Admin | `GET/PATCH /admin/users` · `GET /admin/jobs` · `GET /admin/runs` · `GET /admin/runs/:jobId` · `GET/PATCH /admin/engine` · `GET/PATCH /admin/settings` |
 
 Production static serve: `apps/studio/frontend/out` via `mountFrontendStatic` (trailingSlash page fallbacks, no SPA catch-all over `/api`, CSP as in §8.10 / helmet).
@@ -343,11 +343,11 @@ Account creation is free but needs admin approval. Signup fields: full name, ema
 
 ### 8.10 UI
 
-- Screens: Login · Request account (with a pending-approval state) · Home (greeting, New image / New video, recent with tool icons) · Create image / Create video (thread) · Library / My Generations (**All** default first · Images · Videos; Favorites chip; heart; download; delete; image **Use as base** / video **Use as Start frame**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
+- Screens: Login · Request account (with a pending-approval state) · Home (engine pill + New image / New video; greeting + “What will you create today?”; composer with image/video switch + idea chips; Quick start · Your queue · Usage today) · Create image / Create video (thread) · Library / My Generations (**All** default first · Images · Videos; Favorites chip; heart; download; delete; image **Use as base** / video **Use as Start frame**) · Admin (Dashboard, Users and approvals, Jobs, Engine pause, Settings) · mobile tab bar (Home, History, Profile).
 - **Tool registry** (`features/create/tool-ui.ts`): one entry per tool — icon, title, "New …" label, attachment style (`numbered` image / `slots` video), result card component. Sidebar + Home use it; never show model / node / workflow / recipe names.
 - **Composer (mode-driven, no per-recipe UI code):** single shell — optional attachments tray (Motion height/fade) + taller autosize prompt (max 2000) + toolbar. Attachment count + optional variant → `pickMode` → mode chip, placeholder, controls. **Image toolbar:** + attach, aspect pill, Fast/Best when applicable, quota ("N of 100 images left today"), send. **Video toolbar:** frames icon (toggles Start/End slots; End after Start), aspect pill, **inline** quality + duration enum pills (no settings popup), quota ("N of 25 videos left today"), send. First video attach can preselect nearest aspect unless the user already changed it. Sources = upload / drop / paste / library. Working image chip is image-only (section 8.3).
 - **Generation cards:** image — Based on / Edit / Add as reference / **Animate** / Download / Regenerate / Copy / Delete; lightbox for stills. Video — poster preview (click → **VideoLightbox** with `object-contain`, same as library so portrait/story are not cropped); queued shows position + "Videos can take a few minutes"; running shows stage + % + progress bar + timer; done actions Continue / Download / Regenerate / Copy / Delete. Notifications: "Your video is ready" when the finished job tool is video.
-- **Library:** All / Images / Videos; video tiles autoplay muted loop with duration badge; click opens VideoLightbox (player, Use as Start frame via last-frame extract, download, delete). Composer dock is **fixed** to the bottom of the viewport when images are selected (no dark shade behind it).
+- **Library:** All / Images / Videos; video tiles autoplay muted loop with duration badge; click opens VideoLightbox (player, Use as Start frame via last-frame extract, download, delete). **Admin:** same Library shows every user's generations; each tile shows a creator initials chip on hover (click opens a popover with full name + email only). Composer dock is **fixed** to the bottom of the viewport when images are selected (no dark shade behind it).
 - Stack: Next.js static export (`output: 'export'`, `trailingSlash`, `/create/?tool=image|video` + optional `base` / `thread`) · Tailwind v4 · Radix · Motion · lucide · TanStack Query · react-hook-form + Zod · `next-themes` · `sonner` · self-hosted Inter Variable. No external assets; strict CSP.
 
 ### 8.11 Run and status
@@ -483,15 +483,17 @@ apps/studio/
         │                  segmented · chip · empty-state · lightbox · video-lightbox
         ├── features/
         │   ├── auth/      api · hooks · schemas · forms · guards
-        │   ├── create/    api · hooks · control-state · tool-ui · composer
-        │   │              generation / video-generation cards · enum-pill
-        │   │              nearest-aspect · continue-from-video · resolve-tool-id
-        │   │              attachments/ (types · reducer · tray · slots
-        │   │              enqueue-uploads · extract-image-files · working-image-storage)
-        │   ├── library/   api · hooks · library-page · library-pane · grid
-        │   ├── admin/     api · hooks · users · engine · admin-shell
-        │   ├── events/    apply-event · use-studio-events · job-live
-        │   └── notifications/  decisions · sound · title · provider · controls
+│   ├── create/    api · hooks · control-state · tool-ui · composer
+│   │              generation / video-generation cards · enum-pill
+│   │              nearest-aspect · continue-from-video · resolve-tool-id
+│   │              attachments/ (types · reducer · tray · slots
+│   │              enqueue-uploads · extract-image-files · working-image-storage)
+│   ├── home/      home-page · topbar · hero · tool-switch · idea-chips
+│   │              quick-start · queue · usage · use-home-queue
+│   ├── library/   api · hooks · library-page · library-pane · grid
+│   ├── admin/     api · hooks · users · engine · admin-shell
+│   ├── events/    apply-event · use-studio-events · job-live
+│   └── notifications/  decisions · sound · title · provider · controls
         ├── lib/           api-client · query-client · query-keys · errors · storage
         │                  icons · files · cn · format
         └── hooks/         use-online · use-media-query
@@ -570,6 +572,7 @@ apps/studio/
 | Video daily quota default 25; prompt max 2000 | Video runs are longer; longer prompts help motion+audio direction |
 | Host ffmpeg for probe, poster thumb, and `POST /assets/:id/frame` | No extra npm media stack; Range-enabled file serve for seeking |
 | Frontend `tool-ui` registry + slots tray + VideoLightbox | Adding a tool is one registry entry; portrait/story use contain lightbox like library |
+| Admin Library lists all users' generations with `owner` on each item | Signup already promises generations are visible to admins; creator chip + modal makes ownership obvious without a separate admin page |
 
 ## 12. Open items
 

@@ -1,12 +1,7 @@
 'use client';
 
-import { AdminShell } from '@/features/admin/admin-shell';
-import { RequireAdmin } from '@/features/auth/require-admin';
+import { EngineCard } from '@/features/admin/engine-card';
 
 export default function AdminEngineRoute() {
-  return (
-    <RequireAdmin>
-      <AdminShell />
-    </RequireAdmin>
-  );
+  return <EngineCard />;
 }

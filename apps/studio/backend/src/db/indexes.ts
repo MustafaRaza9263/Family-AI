@@ -27,6 +27,22 @@ export async function ensureIndexes(db: Db): Promise<void> {
     },
     { key: { userId: 1, status: 1 }, name: 'jobs_userId_status' },
     { key: { threadId: 1 }, name: 'jobs_threadId' },
+    {
+      key: { 'timings.queuedAt': -1, _id: -1 },
+      name: 'jobs_queuedAt_id',
+    },
+    {
+      key: { userId: 1, 'timings.queuedAt': -1 },
+      name: 'jobs_userId_queuedAt',
+    },
+    {
+      key: { status: 1, 'timings.queuedAt': -1 },
+      name: 'jobs_status_queuedAt',
+    },
+    {
+      key: { recipeId: 1, 'timings.queuedAt': -1 },
+      name: 'jobs_recipeId_queuedAt',
+    },
   ]);
 
   await db.collection('assets').createIndexes([

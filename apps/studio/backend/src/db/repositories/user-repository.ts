@@ -42,6 +42,9 @@ export interface UserRepository {
   create(input: CreateUserInput): Promise<UserRecord>;
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
+  findByIds(ids: string[]): Promise<UserRecord[]>;
+  /** Substring match on email or fullName (case-insensitive). */
+  searchIdsByNameOrEmail(q: string, limit?: number): Promise<string[]>;
   list(filter: ListUsersFilter): Promise<{ items: UserRecord[]; total: number }>;
   countByStatus(): Promise<{
     pending: number;

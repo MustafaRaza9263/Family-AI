@@ -189,6 +189,49 @@ body {
   }
 }
 
+@keyframes home-ping {
+  70% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--success) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 0%, transparent);
+  }
+}
+
+.home-engine-dot {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 60%, transparent);
+  animation: home-ping 2s ease infinite;
+}
+
+/* Home idea chips: single-line marquee, right → left */
+@keyframes idea-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.idea-marquee-track {
+  animation: idea-marquee 32s linear infinite;
+}
+
+.idea-marquee:hover .idea-marquee-track,
+.idea-marquee:focus-within .idea-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-engine-dot {
+    animation: none;
+  }
+
+  .idea-marquee-track {
+    animation: none;
+  }
+}
+
 .hero-rise {
   animation: hero-rise 0.85s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

@@ -42,6 +42,14 @@ export class MongoMetricsStore implements MetricsStore {
     return doc ? stripId(doc) : null;
   }
 
+  async findByJobIds(ids: string[]): Promise<JobMetricsRow[]> {
+    if (ids.length === 0) return [];
+    const docs = await this.collection
+      .find({ jobId: { $in: ids } }, { projection: { _id: 0 } })
+      .toArray();
+    return docs.map(stripId);
+  }
+
   async list(opts: ListMetricsOpts): Promise<JobMetricsRow[]> {
     const filter = opts.before ? { finishedAt: { $lt: opts.before } } : {};
     const docs = await this.collection

@@ -41,6 +41,8 @@ export type NodeTiming = {
   cached: boolean;
 };
 
+export type SnapshotNode = NodeTiming & { running?: true };
+
 export type Phases = {
   loadMs: number;
   sampleMs: number;
@@ -75,9 +77,27 @@ export type HardwareSummary = {
   gpuAvailable: boolean;
 };
 
+export type RunSnapshot = {
+  jobId: string;
+  nodes: SnapshotNode[];
+  phases: Phases;
+  hardware: HardwareSummary;
+  elapsedMs: number;
+};
+
 export type Telemetry = {
   runStart(jobId: string, meta: RunMeta): void;
   runEvent(jobId: string, ev: RunEvent): void;
   runEnd(jobId: string, end: RunEnd): void;
+  /** Partial metrics for an ACTIVE run; null if unknown / disabled. */
+  snapshot(jobId: string): RunSnapshot | null;
+  /**
+   * Stream hardware samples while at least one watcher is active.
+   * Returns a stop function that releases the sampler refcount.
+   */
+  watch(
+    listener: (sample: HardwareSample) => void,
+    intervalMs?: number,
+  ): () => void;
   flush(): Promise<void>;
 };

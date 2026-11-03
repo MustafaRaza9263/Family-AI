@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Lightbox } from '@/components/ui/lightbox';
 import { VideoLightbox } from '@/components/ui/video-lightbox';
+import { useMe } from '@/features/auth/hooks';
 import { useExtractFrame } from '@/features/create';
 import { continueFromLastFrame } from '@/features/create/continue-from-video';
 import { formatDurationBadge } from '@/features/create/format-duration';
@@ -43,12 +44,14 @@ export function LibraryPane({
   onToggleSelect: (asset: AssetDto) => void;
 }) {
   const router = useRouter();
+  const me = useMe();
   const query = useLibraryInfinite(kind, favoritedOnly);
   const del = useDeleteLibraryAsset();
   const favorite = useToggleFavorite();
   const extractFrame = useExtractFrame();
   const [lightbox, setLightbox] = useState<AssetDto | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const viewerUserId = me.data?.user.id;
 
   const items = useMemo(
     () => query.data?.pages.flatMap((p) => p.items) ?? [],
@@ -83,27 +86,27 @@ export function LibraryPane({
     ) : (
       <Images strokeWidth={1.5} />
     );
+    // In-flow + min-height: absolute inset-0 collapses on mobile when the
+    // tab pane has no resolved height, so the icon overlaps the filter chips.
     return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <EmptyState
-          className="py-0"
-          icon={icon}
-          title={
-            favoritedOnly
-              ? 'No favorites yet'
-              : kind === 'video'
-                ? 'No videos yet'
-                : 'No generations yet'
-          }
-          description={
-            favoritedOnly
-              ? 'Tap the heart on any image or video to save it here.'
-              : kind === 'video'
-                ? 'Create a video and it will show up here.'
-                : 'Create something and it will show up in your library.'
-          }
-        />
-      </div>
+      <EmptyState
+        className="min-h-[min(24rem,55dvh)] w-full"
+        icon={icon}
+        title={
+          favoritedOnly
+            ? 'No favorites yet'
+            : kind === 'video'
+              ? 'No videos yet'
+              : 'No generations yet'
+        }
+        description={
+          favoritedOnly
+            ? 'Tap the heart on any image or video to save it here.'
+            : kind === 'video'
+              ? 'Create a video and it will show up here.'
+              : 'Create something and it will show up in your library.'
+        }
+      />
     );
   }
 
@@ -114,6 +117,7 @@ export function LibraryPane({
         hasMore={Boolean(query.hasNextPage)}
         loadingMore={query.isFetchingNextPage}
         selectedIds={selectedIds}
+        viewerUserId={viewerUserId}
         onLoadMore={() => {
           if (query.hasNextPage && !query.isFetchingNextPage) {
             void query.fetchNextPage();

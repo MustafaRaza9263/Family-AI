@@ -38,6 +38,7 @@ import { mountFrontendStatic } from './middleware/frontend-static.js';
 import { createAuthRoutes } from './routes/auth.routes.js';
 import { createAdminRoutes } from './routes/admin.routes.js';
 import { createAdminStudioRoutes } from './routes/admin-studio.routes.js';
+import { createAdminEventsRoutes } from './routes/admin-events.routes.js';
 import { createHealthRoutes } from './routes/health.routes.js';
 import { createCapabilitiesRoutes } from './routes/capabilities.routes.js';
 import { createThreadsRoutes } from './routes/threads.routes.js';
@@ -129,6 +130,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
     app.use('/api', createLibraryRoutes(s.library));
     app.use('/api', createUploadsRoutes(s.uploads, limits));
     app.use('/api', createAdminStudioRoutes(s.adminStudio));
+    app.use('/api', createAdminEventsRoutes(s.hub));
   }
 
   const distDir =

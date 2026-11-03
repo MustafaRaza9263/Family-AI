@@ -75,6 +75,25 @@ export class MongoUserRepository implements UserRepository {
     return doc ? toRecord(doc) : null;
   }
 
+  async findByIds(ids: string[]): Promise<UserRecord[]> {
+    const objectIds = ids
+      .filter((id) => ObjectId.isValid(id))
+      .map((id) => new ObjectId(id));
+    if (objectIds.length === 0) return [];
+    const docs = await this.users.find({ _id: { $in: objectIds } }).toArray();
+    return docs.map(toRecord);
+  }
+
+  async searchIdsByNameOrEmail(q: string, limit = 100): Promise<string[]> {
+    const re = new RegExp(escapeRegex(q), 'i');
+    const docs = await this.users
+      .find({ $or: [{ fullName: re }, { email: re }] })
+      .project({ _id: 1 })
+      .limit(limit)
+      .toArray();
+    return docs.map((d) => d._id.toHexString());
+  }
+
   async list(
     filter: ListUsersFilter,
   ): Promise<{ items: UserRecord[]; total: number }> {

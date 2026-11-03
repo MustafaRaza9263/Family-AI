@@ -2,7 +2,16 @@
 
 import type { ToolCapability } from '@studio/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/cn';
 import { AttachmentTray } from '../attachments/attachment-tray';
@@ -27,7 +36,7 @@ import {
 import { nearestAspect } from '../nearest-aspect';
 import { toolUi } from '../tool-ui';
 import { ControlBar } from './control-bar';
-import { PromptField } from './prompt-field';
+import { PromptField, type PromptFieldHandle } from './prompt-field';
 
 export type ComposerSubmit = {
   prompt: string;
@@ -36,35 +45,50 @@ export type ComposerSubmit = {
   inputAssetIds: string[];
 };
 
-export function Composer({
-  tool,
-  engineState,
-  quota,
-  disabled,
-  submitting,
-  onSubmit,
-  initialAttachments = [],
-  initialPrompt = '',
-  onWorkingDismiss,
-  onAttachmentRemove,
-  onAttachmentsClear,
-}: {
-  tool: ToolCapability;
-  engineState: 'ready' | 'paused' | 'unavailable';
-  quota: { dailyRuns: number; remaining: number };
-  disabled?: boolean;
-  submitting?: boolean;
-  onSubmit: (data: ComposerSubmit) => void | Promise<void>;
-  /** Remount (via key) when this seed set should replace local tray state. */
-  initialAttachments?: AttachmentItem[];
-  /** Seeded when remounting after Edit prompt. */
-  initialPrompt?: string;
-  onWorkingDismiss?: () => void;
-  /** Fired after a tray thumb is removed (key = attachment key). */
-  onAttachmentRemove?: (key: string) => void;
-  /** Fired when Clear empties the tray. */
-  onAttachmentsClear?: () => void;
-}) {
+export type ComposerHandle = {
+  focus: () => void;
+  /** Open the image file picker (opens video Start/End tray first when needed). */
+  pickFiles: () => void;
+};
+
+export const Composer = forwardRef<
+  ComposerHandle,
+  {
+    tool: ToolCapability;
+    engineState: 'ready' | 'paused' | 'unavailable';
+    quota: { dailyRuns: number; remaining: number };
+    disabled?: boolean;
+    submitting?: boolean;
+    onSubmit: (data: ComposerSubmit) => void | Promise<void>;
+    /** Remount (via key) when this seed set should replace local tray state. */
+    initialAttachments?: AttachmentItem[];
+    /** Seeded when remounting after Edit prompt. */
+    initialPrompt?: string;
+    onWorkingDismiss?: () => void;
+    /** Fired after a tray thumb is removed (key = attachment key). */
+    onAttachmentRemove?: (key: string) => void;
+    /** Fired when Clear empties the tray. */
+    onAttachmentsClear?: () => void;
+    /** Optional leading toolbar control (Home image/video switch). */
+    startSlot?: ReactNode;
+  }
+>(function Composer(
+  {
+    tool,
+    engineState,
+    quota,
+    disabled,
+    submitting,
+    onSubmit,
+    initialAttachments = [],
+    initialPrompt = '',
+    onWorkingDismiss,
+    onAttachmentRemove,
+    onAttachmentsClear,
+    startSlot,
+  },
+  ref,
+) {
   const ui = toolUi(tool.id);
   const prefs = useMemo(() => loadPrefs(tool.id), [tool.id]);
   const [attachState, dispatch] = useReducer(
@@ -82,6 +106,16 @@ export function Composer({
   );
   const aspectTouched = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const promptRef = useRef<PromptFieldHandle>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => promptRef.current?.focus(),
+    pickFiles: () => {
+      if (ui.attachmentStyle === 'slots') setFramesOpen(true);
+      // Let the tray open before the native file dialog.
+      window.setTimeout(() => fileRef.current?.click(), 0);
+    },
+  }));
 
   const [prompt, setPrompt] = useState(initialPrompt);
   const [variantId, setVariantId] = useState<string | undefined>(
@@ -266,6 +300,7 @@ export function Composer({
         ref={fileRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
+        multiple
         className="hidden"
         onChange={(e) => {
           if (e.target.files) addFiles(Array.from(e.target.files));
@@ -273,6 +308,7 @@ export function Composer({
         }}
       />
       <PromptField
+        ref={promptRef}
         value={prompt}
         maxLength={promptMax}
         placeholder={mode?.placeholder}
@@ -312,6 +348,7 @@ export function Composer({
         onPickFiles={(list) => {
           if (list) addFiles(Array.from(list));
         }}
+        startSlot={startSlot}
       />
       {engineState === 'paused' ? (
         <p className="px-2 pt-1 text-xs text-muted-foreground">
@@ -320,4 +357,4 @@ export function Composer({
       ) : null}
     </form>
   );
-}
+});

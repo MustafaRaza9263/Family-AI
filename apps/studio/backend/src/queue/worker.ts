@@ -12,6 +12,10 @@ import type { MediaTools } from '../media/types.js';
 import type { Telemetry } from '../telemetry/types.js';
 import { cancelJob } from './cancel.js';
 import {
+  createCurrentJobSlot,
+  type CurrentJobInfo,
+} from './current-job.js';
+import {
   createEngineMonitor,
   type EngineMonitor,
 } from './engine-state.js';
@@ -33,6 +37,8 @@ export type QueueWorker = {
   setEnginePaused(paused: boolean): void;
   /** Stop claims; wait up to 30s for the running job. */
   stop(): Promise<void>;
+  /** In-flight job for admin.live; null when idle. */
+  current(): CurrentJobInfo | null;
   readonly lastServedAt: Map<string, number>;
 };
 
@@ -58,6 +64,7 @@ export function createQueueWorker(opts: CreateWorkerOpts): QueueWorker {
   const bus = new EventEmitter();
   const aborts: AbortMap = new Map();
   const lastServedAt = new Map<string, number>();
+  const currentJob = createCurrentJobSlot();
   let busy = false;
   let stopping = false;
   let wakeTimer: ReturnType<typeof setInterval> | null = null;
@@ -105,6 +112,7 @@ export function createQueueWorker(opts: CreateWorkerOpts): QueueWorker {
         dataDir: opts.dataDir,
         aborts,
         lastServedAt,
+        currentJob,
       });
     } finally {
       busy = false;
@@ -116,6 +124,7 @@ export function createQueueWorker(opts: CreateWorkerOpts): QueueWorker {
   return {
     lastServedAt,
     wake,
+    current: () => currentJob.get(),
     async cancel(jobId, userId) {
       return cancelJob(jobId, userId, {
         jobs: opts.jobs,

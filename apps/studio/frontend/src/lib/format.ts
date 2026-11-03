@@ -41,3 +41,36 @@ export function initials(fullName: string): string {
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return `${parts[0]![0] ?? ''}${parts[1]![0] ?? ''}`.toUpperCase();
 }
+
+/** e.g. 500 → "500ms", 4200 → "4.2s", 124000 → "2m 4s" */
+export function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
+}
+
+/** Megabytes → "3.2 GB" */
+export function formatMbAsGb(mb: number): string {
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+
+/** e.g. 145 → "145 W" */
+export function formatWatts(w: number): string {
+  return `${Math.round(w)} W`;
+}
+
+/** e.g. 67.4 → "67%" (integer rounding by default) */
+export function formatPercent(p: number, decimals = 0): string {
+  return `${p.toFixed(decimals)}%`;
+}
+
+/** Bytes → human-readable string */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   adminJobsQuerySchema,
   adminRunsQuerySchema,
+  adminStatsQuerySchema,
   patchEngineRequestSchema,
   patchSettingsRequestSchema,
 } from '@studio/shared';
@@ -12,6 +13,7 @@ import { validate } from '../middleware/validate.js';
 import type { AdminStudioService } from '../services/admin-studio.service.js';
 
 const jobIdParams = z.object({ jobId: z.string().min(1) });
+const idParams = z.object({ id: z.string().min(1) });
 
 export function createAdminStudioRoutes(service: AdminStudioService): Router {
   const router = Router();
@@ -22,6 +24,18 @@ export function createAdminStudioRoutes(service: AdminStudioService): Router {
     requireAdmin,
     validate(adminJobsQuerySchema, 'query'),
     (req, res, next) => void controller.listJobs(req, res, next),
+  );
+  router.get(
+    '/admin/jobs/:id',
+    requireAdmin,
+    validate(idParams, 'params'),
+    (req, res, next) => void controller.getJob(req, res, next),
+  );
+  router.get(
+    '/admin/stats',
+    requireAdmin,
+    validate(adminStatsQuerySchema, 'query'),
+    (req, res, next) => void controller.getStats(req, res, next),
   );
   router.get(
     '/admin/runs',

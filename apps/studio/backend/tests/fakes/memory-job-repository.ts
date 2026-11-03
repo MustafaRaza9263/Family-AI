@@ -61,6 +61,25 @@ export class MemoryJobRepository implements JobRepository {
 
   async listAdmin(opts: ListAdminJobsOpts): Promise<JobRecord[]> {
     let rows = [...this.jobs.values()];
+    if (opts.status) rows = rows.filter((j) => j.status === opts.status);
+    if (opts.tool) rows = rows.filter((j) => j.tool === opts.tool);
+    if (opts.recipeId) rows = rows.filter((j) => j.recipeId === opts.recipeId);
+    if (opts.userIds && opts.userIds.length > 0) {
+      const set = new Set(opts.userIds);
+      rows = rows.filter((j) => set.has(j.userId));
+    }
+    if (opts.promptRegex) {
+      const re = new RegExp(opts.promptRegex, 'i');
+      rows = rows.filter((j) => re.test(j.prompt));
+    }
+    if (opts.from) {
+      const from = opts.from.getTime();
+      rows = rows.filter((j) => j.timings.queuedAt.getTime() >= from);
+    }
+    if (opts.to) {
+      const to = opts.to.getTime();
+      rows = rows.filter((j) => j.timings.queuedAt.getTime() <= to);
+    }
     rows.sort((a, b) => {
       const dt = b.timings.queuedAt.getTime() - a.timings.queuedAt.getTime();
       if (dt !== 0) return dt;
@@ -75,6 +94,18 @@ export class MemoryJobRepository implements JobRepository {
       });
     }
     return rows.slice(0, opts.limit).map(clone);
+  }
+
+  async listForStats(opts: {
+    from: Date;
+    to: Date;
+    limit: number;
+  }): Promise<JobRecord[]> {
+    return this.listAdmin({
+      limit: opts.limit,
+      from: opts.from,
+      to: opts.to,
+    });
   }
 
   async countByUserAndStatuses(
@@ -113,6 +144,7 @@ export class MemoryJobRepository implements JobRepository {
     j.timings.finishedAt = input.finishedAt;
     if (input.outputAssetIds) j.outputAssetIds = [...input.outputAssetIds];
     if (input.errorCode !== undefined) j.errorCode = input.errorCode;
+    if (input.errorDetail !== undefined) j.errorDetail = input.errorDetail;
     return clone(j);
   }
 
@@ -123,6 +155,7 @@ export class MemoryJobRepository implements JobRepository {
     delete j.timings.startedAt;
     delete j.comfyPromptId;
     delete j.errorCode;
+    delete j.errorDetail;
     return clone(j);
   }
 

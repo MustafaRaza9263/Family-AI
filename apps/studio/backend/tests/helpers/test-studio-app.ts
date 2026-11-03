@@ -39,6 +39,7 @@ export type StudioTestContext = {
   jobs: MemoryJobRepository;
   assets: MemoryAssetRepository;
   audit: MemoryAuditRepository;
+  metrics: MemoryMetricsStore;
   hub: ReturnType<typeof createEventHub>;
   env: Env;
   clock: { nowMs: number; now(): Date };
@@ -82,11 +83,21 @@ export async function buildStudioTestApp(
   const lastServedAt = new Map<string, number>();
   let engineState: EngineState = 'ready';
 
+  const noopTelemetry = {
+    runStart: () => undefined,
+    runEvent: () => undefined,
+    runEnd: () => undefined,
+    snapshot: () => null,
+    watch: () => () => undefined,
+    flush: async () => undefined,
+  };
+
   const worker: QueueWorker = {
     lastServedAt,
     start: async () => undefined,
     stop: async () => undefined,
     wake: () => undefined,
+    current: () => null,
     cancel: async (jobId, userId) => {
       const job = await jobs.findById(jobId);
       if (!job || job.userId !== userId) return false;
@@ -158,6 +169,7 @@ export async function buildStudioTestApp(
     library: new LibraryService(
       assets,
       new MemoryFavoriteRepository(),
+      users,
       clock as Clock,
     ),
     uploads: new UploadService({
@@ -167,8 +179,13 @@ export async function buildStudioTestApp(
     }),
     adminStudio: new AdminStudioService({
       jobs,
+      users,
+      assets,
       settings,
       metrics,
+      telemetry: noopTelemetry,
+      retentionDays: env.TELEMETRY_RETENTION_DAYS,
+      now: () => clock.now(),
       wake: () => worker.wake(),
       setEnginePaused: (p) => worker.setEnginePaused(p),
     }),
@@ -195,6 +212,7 @@ export async function buildStudioTestApp(
     jobs,
     assets,
     audit,
+    metrics,
     hub,
     env,
     clock,

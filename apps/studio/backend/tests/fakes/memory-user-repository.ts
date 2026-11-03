@@ -46,6 +46,23 @@ export class MemoryUserRepository implements UserRepository {
     return user ? { ...user } : null;
   }
 
+  async findByIds(ids: string[]): Promise<UserRecord[]> {
+    const out: UserRecord[] = [];
+    for (const id of ids) {
+      const user = this.users.get(id);
+      if (user) out.push({ ...user });
+    }
+    return out;
+  }
+
+  async searchIdsByNameOrEmail(q: string, limit = 100): Promise<string[]> {
+    const re = new RegExp(escapeRegex(q), 'i');
+    return [...this.users.values()]
+      .filter((u) => re.test(u.fullName) || re.test(u.email))
+      .slice(0, limit)
+      .map((u) => u.id);
+  }
+
   async list(
     filter: ListUsersFilter,
   ): Promise<{ items: UserRecord[]; total: number }> {

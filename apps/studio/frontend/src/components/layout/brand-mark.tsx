@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from '@studio/shared';
+import Link from 'next/link';
 import { cn } from '@/lib/cn';
 
 export function BrandMark({
@@ -12,7 +13,8 @@ export function BrandMark({
     size === 'lg' ? 'text-2xl' : size === 'sm' ? 'text-base' : 'text-lg';
 
   return (
-    <p
+    <Link
+      href="/"
       className={cn(
         'whitespace-nowrap font-semibold tracking-tight text-foreground',
         text,
@@ -20,6 +22,6 @@ export function BrandMark({
       )}
     >
       {PRODUCT_NAME}
-    </p>
+    </Link>
   );
 }

@@ -8,5 +8,6 @@ export type ListMetricsOpts = {
 export type MetricsStore = {
   save(row: JobMetricsRow): Promise<void>;
   findByJobId(id: string): Promise<JobMetricsRow | null>;
+  findByJobIds(ids: string[]): Promise<JobMetricsRow[]>;
   list(opts: ListMetricsOpts): Promise<JobMetricsRow[]>;
 };

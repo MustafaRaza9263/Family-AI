@@ -1,31 +1,51 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
 import { cn } from '@/lib/cn';
 import { extractImageFiles } from '../attachments/extract-image-files';
 
-export function PromptField({
-  value,
-  maxLength = 2000,
-  placeholder,
-  onChange,
-  disabled,
-  onPasteFiles,
-  onSubmitRequest,
-}: {
-  value: string;
-  maxLength?: number;
-  placeholder?: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  onPasteFiles?: (files: File[]) => void;
-  /** Enter (without Shift) submits. */
-  onSubmitRequest?: () => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+export type PromptFieldHandle = {
+  focus: () => void;
+};
+
+export const PromptField = forwardRef<
+  PromptFieldHandle,
+  {
+    value: string;
+    maxLength?: number;
+    placeholder?: string;
+    onChange: (value: string) => void;
+    disabled?: boolean;
+    onPasteFiles?: (files: File[]) => void;
+    /** Enter (without Shift) submits. */
+    onSubmitRequest?: () => void;
+  }
+>(function PromptField(
+  {
+    value,
+    maxLength = 2000,
+    placeholder,
+    onChange,
+    disabled,
+    onPasteFiles,
+    onSubmitRequest,
+  },
+  ref,
+) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    },
+  }));
 
   useEffect(() => {
-    const el = ref.current;
+    const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
     // Keep a taller resting height so image and video prompts feel roomy.
@@ -34,7 +54,7 @@ export function PromptField({
 
   return (
     <textarea
-      ref={ref}
+      ref={textareaRef}
       value={value}
       maxLength={maxLength}
       disabled={disabled}
@@ -63,4 +83,4 @@ export function PromptField({
       }}
     />
   );
-}
+});

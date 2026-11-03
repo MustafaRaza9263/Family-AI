@@ -12,10 +12,19 @@ export type EngineErrorCode =
 /** User-safe engine failure; never put ComfyUI exception text in `message`. */
 export class EngineError extends Error {
   readonly code: EngineErrorCode;
+  /** Admin-only; never put this on user-facing DTOs. */
+  readonly internalDetail?: string;
 
-  constructor(code: EngineErrorCode, message: string) {
+  constructor(
+    code: EngineErrorCode,
+    message: string,
+    internalDetail?: string,
+  ) {
     super(message);
     this.name = 'EngineError';
     this.code = code;
+    if (internalDetail !== undefined) {
+      this.internalDetail = internalDetail;
+    }
   }
 }

@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatDurationBadge } from '@/features/create/format-duration';
 import { cn } from '@/lib/cn';
 import { assetUrl } from '@/lib/files';
+import { OwnerBadge } from './owner-badge';
 
 const MASONRY =
   'columns-2 gap-3 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6';
@@ -97,6 +98,7 @@ function LibraryTile({
   asset,
   selected,
   selectionActive,
+  viewerUserId,
   onOpen,
   onEdit,
   onUseAsStart,
@@ -107,6 +109,7 @@ function LibraryTile({
   asset: AssetDto;
   selected: boolean;
   selectionActive: boolean;
+  viewerUserId?: string;
   onOpen: (asset: AssetDto) => void;
   onEdit: (asset: AssetDto) => void;
   onUseAsStart: (asset: AssetDto) => void;
@@ -118,6 +121,9 @@ function LibraryTile({
   const longPressedRef = useRef(false);
   const selectable = asset.kind === 'image';
   const duration = formatDurationBadge(asset.durationSec);
+  const owner = asset.owner;
+  // Favorites are per-owner; hide heart on other users' tiles for admins.
+  const canFavorite = !owner || !viewerUserId || owner.id === viewerUserId;
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -254,50 +260,58 @@ function LibraryTile({
         </OverlayIcon>
       </div>
 
+      {owner ? <OwnerBadge owner={owner} /> : null}
+
       {duration ? (
         <span
           className={cn(
-            'pointer-events-none absolute bottom-2.5 left-2.5 z-10',
+            'pointer-events-none absolute z-10',
             'rounded-md bg-black/65 px-1.5 py-0.5',
             'font-mono text-[11px] font-medium text-white',
+            // Sit beside the creator chip when an admin badge is present.
+            owner ? 'bottom-3 left-10' : 'bottom-2.5 left-2.5',
           )}
         >
           {duration}
         </span>
       ) : null}
 
-      <button
-        type="button"
-        aria-label={asset.favorited ? 'Remove from favorites' : 'Add to favorites'}
-        aria-pressed={asset.favorited}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleFavorite(asset);
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        className={cn(
-          'absolute bottom-2.5 right-2.5 z-10 grid size-9 place-items-center rounded-full',
-          'shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-sm',
-          'bg-[color-mix(in_srgb,#1a1a1a_55%,transparent)]',
-          'transition-[transform,background-color,opacity] duration-150',
-          'hover:scale-105 active:scale-95',
-          // Always on mobile; hover/focus only on desktop.
-          'opacity-100',
-          'md:pointer-events-none md:opacity-0',
-          'md:group-hover:pointer-events-auto md:group-hover:opacity-100',
-          'md:group-focus-within:pointer-events-auto md:group-focus-within:opacity-100',
-        )}
-      >
-        <Heart
+      {canFavorite ? (
+        <button
+          type="button"
+          aria-label={
+            asset.favorited ? 'Remove from favorites' : 'Add to favorites'
+          }
+          aria-pressed={asset.favorited}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite(asset);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'size-4 transition-colors',
-            asset.favorited
-              ? 'fill-rose-500 text-rose-500'
-              : 'fill-transparent text-white',
+            'absolute bottom-2.5 right-2.5 z-10 grid size-9 place-items-center rounded-full',
+            'shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-sm',
+            'bg-[color-mix(in_srgb,#1a1a1a_55%,transparent)]',
+            'transition-[transform,background-color,opacity] duration-150',
+            'hover:scale-105 active:scale-95',
+            // Always on mobile; hover/focus only on desktop.
+            'opacity-100',
+            'md:pointer-events-none md:opacity-0',
+            'md:group-hover:pointer-events-auto md:group-hover:opacity-100',
+            'md:group-focus-within:pointer-events-auto md:group-focus-within:opacity-100',
           )}
-          strokeWidth={2}
-        />
-      </button>
+        >
+          <Heart
+            className={cn(
+              'size-4 transition-colors',
+              asset.favorited
+                ? 'fill-rose-500 text-rose-500'
+                : 'fill-transparent text-white',
+            )}
+            strokeWidth={2}
+          />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -307,6 +321,7 @@ export function LibraryGrid({
   hasMore,
   loadingMore,
   selectedIds,
+  viewerUserId,
   onLoadMore,
   onOpen,
   onEdit,
@@ -319,6 +334,7 @@ export function LibraryGrid({
   hasMore: boolean;
   loadingMore: boolean;
   selectedIds: Set<string>;
+  viewerUserId?: string;
   onLoadMore: () => void;
   onOpen: (asset: AssetDto) => void;
   onEdit: (asset: AssetDto) => void;
@@ -349,6 +365,7 @@ export function LibraryGrid({
             asset={asset}
             selected={selectedIds.has(asset.id)}
             selectionActive={selectionActive}
+            viewerUserId={viewerUserId}
             onOpen={onOpen}
             onEdit={onEdit}
             onUseAsStart={onUseAsStart}

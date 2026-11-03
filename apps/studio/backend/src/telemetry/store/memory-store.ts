@@ -13,6 +13,15 @@ export class MemoryMetricsStore implements MetricsStore {
     return this.rows.get(id) ?? null;
   }
 
+  async findByJobIds(ids: string[]): Promise<JobMetricsRow[]> {
+    const out: JobMetricsRow[] = [];
+    for (const id of ids) {
+      const row = this.rows.get(id);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+
   async list(opts: ListMetricsOpts): Promise<JobMetricsRow[]> {
     const items = [...this.rows.values()]
       .filter((row) => (opts.before ? row.finishedAt < opts.before : true))

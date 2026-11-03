@@ -1,4 +1,8 @@
-export { Composer, type ComposerSubmit } from './components/composer';
+export {
+  Composer,
+  type ComposerHandle,
+  type ComposerSubmit,
+} from './components/composer';
 export { CreatePage } from './components/create-page';
 export {
   useCapabilities,

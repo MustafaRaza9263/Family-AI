@@ -67,6 +67,8 @@ export type JobDocument = {
   parentAssetId?: ObjectId;
   comfyPromptId?: string;
   errorCode?: string;
+  /** Admin-only engine detail; never serialized to user DTOs. */
+  errorDetail?: string;
   attempts: number;
   timings: JobTimings;
 };

@@ -17,20 +17,22 @@ function toRecord(doc: JobDocument): JobRecord {
     threadId: doc.threadId.toHexString(),
     tool: doc.tool,
     recipeId: doc.recipeId,
-    variant: doc.variant,
+    // Mongo may store explicit null for optional fields; Zod rejects null.
+    variant: doc.variant ?? undefined,
     status: doc.status,
     prompt: doc.prompt,
     params: doc.params,
     inputAssetIds: doc.inputAssetIds.map((id) => id.toHexString()),
     outputAssetIds: doc.outputAssetIds.map((id) => id.toHexString()),
-    parentAssetId: doc.parentAssetId?.toHexString(),
-    comfyPromptId: doc.comfyPromptId,
-    errorCode: doc.errorCode,
+    parentAssetId: doc.parentAssetId?.toHexString() ?? undefined,
+    comfyPromptId: doc.comfyPromptId ?? undefined,
+    errorCode: doc.errorCode ?? undefined,
+    errorDetail: doc.errorDetail ?? undefined,
     attempts: doc.attempts,
     timings: {
       queuedAt: doc.timings.queuedAt,
-      startedAt: doc.timings.startedAt,
-      finishedAt: doc.timings.finishedAt,
+      startedAt: doc.timings.startedAt ?? undefined,
+      finishedAt: doc.timings.finishedAt ?? undefined,
     },
   };
 }
@@ -91,18 +93,24 @@ export class MongoJobRepository implements JobRepository {
   }
 
   async listAdmin(opts: ListAdminJobsOpts): Promise<JobRecord[]> {
-    const filter: Record<string, unknown> = {};
-    if (opts.before && ObjectId.isValid(opts.before.id)) {
-      filter.$or = [
-        { 'timings.queuedAt': { $lt: opts.before.queuedAt } },
-        {
-          'timings.queuedAt': opts.before.queuedAt,
-          _id: { $lt: new ObjectId(opts.before.id) },
-        },
-      ];
-    }
+    const filter = buildAdminFilter(opts);
     const docs = await this.jobs
       .find(filter)
+      .sort({ 'timings.queuedAt': -1, _id: -1 })
+      .limit(opts.limit)
+      .toArray();
+    return docs.map(toRecord);
+  }
+
+  async listForStats(opts: {
+    from: Date;
+    to: Date;
+    limit: number;
+  }): Promise<JobRecord[]> {
+    const docs = await this.jobs
+      .find({
+        'timings.queuedAt': { $gte: opts.from, $lte: opts.to },
+      })
       .sort({ 'timings.queuedAt': -1, _id: -1 })
       .limit(opts.limit)
       .toArray();
@@ -157,6 +165,9 @@ export class MongoJobRepository implements JobRepository {
     if (input.errorCode !== undefined) {
       $set.errorCode = input.errorCode;
     }
+    if (input.errorDetail !== undefined) {
+      $set.errorDetail = input.errorDetail;
+    }
     const doc = await this.jobs.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set },
@@ -171,7 +182,12 @@ export class MongoJobRepository implements JobRepository {
       { _id: new ObjectId(id), status: 'running' },
       {
         $set: { status: 'queued' },
-        $unset: { 'timings.startedAt': '', comfyPromptId: '', errorCode: '' },
+        $unset: {
+          'timings.startedAt': '',
+          comfyPromptId: '',
+          errorCode: '',
+          errorDetail: '',
+        },
       },
       { returnDocument: 'after' },
     );
@@ -200,4 +216,44 @@ export class MongoJobRepository implements JobRepository {
     );
     return doc ? toRecord(doc) : null;
   }
+}
+
+function buildAdminFilter(opts: ListAdminJobsOpts): Record<string, unknown> {
+  const parts: Record<string, unknown>[] = [];
+  if (opts.status) parts.push({ status: opts.status });
+  if (opts.tool) parts.push({ tool: opts.tool });
+  if (opts.recipeId) parts.push({ recipeId: opts.recipeId });
+  if (opts.userIds && opts.userIds.length > 0) {
+    parts.push({
+      userId: {
+        $in: opts.userIds
+          .filter((id) => ObjectId.isValid(id))
+          .map((id) => new ObjectId(id)),
+      },
+    });
+  }
+  if (opts.promptRegex) {
+    parts.push({ prompt: { $regex: opts.promptRegex, $options: 'i' } });
+  }
+  if (opts.from || opts.to) {
+    const range: Record<string, Date> = {};
+    if (opts.from) range.$gte = opts.from;
+    if (opts.to) range.$lte = opts.to;
+    parts.push({ 'timings.queuedAt': range });
+  }
+  if (opts.before && ObjectId.isValid(opts.before.id)) {
+    parts.push({
+      $or: [
+        { 'timings.queuedAt': { $lt: opts.before.queuedAt } },
+        {
+          'timings.queuedAt': opts.before.queuedAt,
+          _id: { $lt: new ObjectId(opts.before.id) },
+        },
+      ],
+    });
+  }
+  if (parts.length === 0) return {};
+  const only = parts[0];
+  if (parts.length === 1 && only) return only;
+  return { $and: parts };
 }

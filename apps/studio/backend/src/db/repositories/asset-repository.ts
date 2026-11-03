@@ -37,7 +37,8 @@ export type CreateAssetInput = {
 };
 
 export type ListLibraryOpts = {
-  userId: string;
+  /** Omit to list every user's library (admin). */
+  userId?: string;
   kind?: AssetKind;
   source?: AssetSource;
   /** When set, only these asset ids (favorites filter). */
